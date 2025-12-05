@@ -3,13 +3,18 @@ package database
 import (
 	"fmt"
 	"log"
+	"sync"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
-var DB *gorm.DB
+var (
+	DB   *gorm.DB
+	once sync.Once
+	mu   sync.Mutex
+)
 
 // Config holds database configuration
 type Config struct {
@@ -21,7 +26,24 @@ type Config struct {
 }
 
 // Connect initializes database connection
+// Returns the same connection instance if already connected
 func Connect(config Config) (*gorm.DB, error) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	// If already connected, return existing connection
+	if DB != nil {
+		// Verify connection is still alive
+		sqlDB, err := DB.DB()
+		if err == nil {
+			if err := sqlDB.Ping(); err == nil {
+				return DB, nil
+			}
+		}
+		// Connection is dead, reset and reconnect
+		DB = nil
+	}
+
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 		config.User,
 		config.Password,
@@ -44,14 +66,22 @@ func Connect(config Config) (*gorm.DB, error) {
 }
 
 // Close closes the database connection
+// Uses sync.Once to ensure it's only closed once, even if called multiple times
 func Close() error {
-	if DB != nil {
-		sqlDB, err := DB.DB()
-		if err != nil {
-			return err
+	var closeErr error
+	once.Do(func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if DB != nil {
+			sqlDB, err := DB.DB()
+			if err != nil {
+				closeErr = err
+				return
+			}
+			closeErr = sqlDB.Close()
+			DB = nil
 		}
-		return sqlDB.Close()
-	}
-	return nil
+	})
+	return closeErr
 }
 

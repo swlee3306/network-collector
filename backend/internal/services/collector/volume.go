@@ -61,13 +61,18 @@ func (c *VolumeCollector) saveVolume(volume volumes.Volume) error {
 	// In production, you might need to use volume metadata or other fields
 
 	// Get attached instance if exists
+	// Convert OpenStack ServerID (instance OpenStack ID) to internal Instance ID
+	// Volume.AttachedTo should store the internal database Instance ID for foreign key relationship
 	var instanceID string
 	if len(volume.Attachments) > 0 {
 		attachment := volume.Attachments[0]
 		if attachment.ServerID != "" {
 			instance, err := c.repository.GetInstanceByOpenStackID(attachment.ServerID)
 			if err != nil {
-				instanceID = attachment.ServerID
+				// Instance not found - leave empty to maintain foreign key integrity
+				// The volume can be updated later when the instance is collected
+				// Storing OpenStack ID here would break the foreign key relationship
+				instanceID = ""
 			} else {
 				instanceID = instance.ID
 			}

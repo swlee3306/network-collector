@@ -59,6 +59,22 @@ func StreamEvents(repo *storage.Repository, broadcaster *events.Broadcaster) gin
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 
+		// Mutex to synchronize writes to c.Writer (HTTP ResponseWriter is not thread-safe)
+		var writeMu sync.Mutex
+
+		// Helper function to safely write to response writer
+		writeSSE := func(data string) error {
+			writeMu.Lock()
+			defer writeMu.Unlock()
+			if _, err := c.Writer.WriteString(data); err != nil {
+				return err
+			}
+			if flusher, ok := c.Writer.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			return nil
+		}
+
 		// Use WaitGroup for proper goroutine coordination
 		var wg sync.WaitGroup
 		wg.Add(1)
@@ -85,12 +101,9 @@ func StreamEvents(repo *storage.Repository, broadcaster *events.Broadcaster) gin
 					case <-ctx.Done():
 						return
 					default:
-						if _, err := c.Writer.WriteString("data: " + string(heartbeatJSON) + "\n\n"); err != nil {
+						if err := writeSSE("data: " + string(heartbeatJSON) + "\n\n"); err != nil {
 							log.Printf("Failed to write heartbeat: %v", err)
 							return
-						}
-						if flusher, ok := c.Writer.(http.Flusher); ok {
-							flusher.Flush()
 						}
 					}
 				case <-ctx.Done():
@@ -123,12 +136,9 @@ func StreamEvents(repo *storage.Repository, broadcaster *events.Broadcaster) gin
 						return
 					default:
 						// Write SSE format: "data: {json}\n\n"
-						if _, err := c.Writer.WriteString("data: " + string(eventJSON) + "\n\n"); err != nil {
+						if err := writeSSE("data: " + string(eventJSON) + "\n\n"); err != nil {
 							log.Printf("Failed to write event: %v", err)
 							return
-						}
-						if flusher, ok := c.Writer.(http.Flusher); ok {
-							flusher.Flush()
 						}
 					}
 
