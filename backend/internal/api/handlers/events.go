@@ -48,14 +48,26 @@ func StreamEvents(repo *storage.Repository) gin.HandlerFunc {
 			c.JSON(500, gin.H{"error": "Failed to initialize event stream"})
 			return
 		}
-		c.Writer.WriteString("data: " + string(initialEventJSON) + "\n\n")
-		c.Writer.Flush()
+		
+		// Write initial event - check for write errors
+		if _, err := c.Writer.WriteString("data: " + string(initialEventJSON) + "\n\n"); err != nil {
+			log.Printf("Failed to write initial event: %v", err)
+			return
+		}
+		if flusher, ok := c.Writer.(http.Flusher); ok {
+			flusher.Flush()
+		}
 
 		// Send periodic heartbeat to keep connection alive
+		// Use request context for cancellation
+		ctx := c.Request.Context()
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 
+		// Heartbeat goroutine with proper cleanup
+		heartbeatDone := make(chan struct{})
 		go func() {
+			defer close(heartbeatDone)
 			for {
 				select {
 				case <-ticker.C:
@@ -70,9 +82,20 @@ func StreamEvents(repo *storage.Repository) gin.HandlerFunc {
 						log.Printf("Failed to marshal heartbeat event: %v", err)
 						continue
 					}
-					c.Writer.WriteString("data: " + string(heartbeatJSON) + "\n\n")
-					c.Writer.Flush()
-				case <-c.Request.Context().Done():
+					// Check if context is cancelled before writing
+					select {
+					case <-ctx.Done():
+						return
+					default:
+						if _, err := c.Writer.WriteString("data: " + string(heartbeatJSON) + "\n\n"); err != nil {
+							log.Printf("Failed to write heartbeat: %v", err)
+							return
+						}
+						if flusher, ok := c.Writer.(http.Flusher); ok {
+							flusher.Flush()
+						}
+					}
+				case <-ctx.Done():
 					return
 				}
 			}
@@ -83,6 +106,8 @@ func StreamEvents(repo *storage.Repository) gin.HandlerFunc {
 			select {
 			case event, ok := <-eventChan:
 				if !ok {
+					// Channel closed, wait for heartbeat goroutine to finish
+					<-heartbeatDone
 					return
 				}
 
@@ -92,11 +117,28 @@ func StreamEvents(repo *storage.Repository) gin.HandlerFunc {
 					continue
 				}
 
-				// Write SSE format: "data: {json}\n\n"
-				c.Writer.WriteString("data: " + string(eventJSON) + "\n\n")
-				c.Writer.Flush()
+				// Check if context is cancelled before writing
+				select {
+				case <-ctx.Done():
+					// Wait for heartbeat goroutine to finish
+					<-heartbeatDone
+					return
+				default:
+					// Write SSE format: "data: {json}\n\n"
+					if _, err := c.Writer.WriteString("data: " + string(eventJSON) + "\n\n"); err != nil {
+						log.Printf("Failed to write event: %v", err)
+						// Wait for heartbeat goroutine to finish
+						<-heartbeatDone
+						return
+					}
+					if flusher, ok := c.Writer.(http.Flusher); ok {
+						flusher.Flush()
+					}
+				}
 
-			case <-c.Request.Context().Done():
+			case <-ctx.Done():
+				// Wait for heartbeat goroutine to finish
+				<-heartbeatDone
 				return
 			}
 		}
