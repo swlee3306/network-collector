@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/network-collector/backend/internal/models"
@@ -35,9 +36,15 @@ func GetInstanceTopology(repo *storage.Repository) gin.HandlerFunc {
 		// Use PathFinder to get complete topology graph
 		pathFinder := topology.NewPathFinder(repo)
 		maxDepth := 10
-		if depth := c.Query("max_depth"); depth != "" {
-			// Parse max_depth if provided
-			_ = depth // TODO: parse depth
+		if depthStr := c.Query("max_depth"); depthStr != "" {
+			if depth, err := strconv.Atoi(depthStr); err == nil && depth > 0 && depth <= 100 {
+				maxDepth = depth
+			} else {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": "max_depth must be a positive integer between 1 and 100",
+				})
+				return
+			}
 		}
 
 		graph, err := pathFinder.GetTopologyGraph(vmNode.ID, maxDepth)

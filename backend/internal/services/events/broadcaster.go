@@ -15,6 +15,8 @@ const (
 	EventTypeError           EventType = "error"
 	EventTypeCollectionStart EventType = "collection.start"
 	EventTypeCollectionEnd   EventType = "collection.end"
+	EventTypeHeartbeat       EventType = "heartbeat"
+	EventTypeConnection      EventType = "connection"
 )
 
 // Event represents a broadcast event

@@ -1,6 +1,7 @@
 package retention
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"time"
@@ -60,6 +61,30 @@ func (s *CleanupService) RunPeriodicCleanup(interval time.Duration) {
 	for range ticker.C {
 		if err := s.CleanupOldMetrics(); err != nil {
 			log.Printf("Periodic cleanup failed: %v", err)
+		}
+	}
+}
+
+// RunPeriodicCleanupWithContext runs cleanup on a schedule with context support for graceful shutdown
+func (s *CleanupService) RunPeriodicCleanupWithContext(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	// Run initial cleanup
+	if err := s.CleanupOldMetrics(); err != nil {
+		log.Printf("Initial cleanup failed: %v", err)
+	}
+
+	// Run periodic cleanup
+	for {
+		select {
+		case <-ticker.C:
+			if err := s.CleanupOldMetrics(); err != nil {
+				log.Printf("Periodic cleanup failed: %v", err)
+			}
+		case <-ctx.Done():
+			log.Println("Cleanup service stopping due to context cancellation")
+			return
 		}
 	}
 }

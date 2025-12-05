@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/signal"
 	"syscall"
@@ -69,8 +70,14 @@ func main() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
+	// Create context for graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Collection goroutine
+	collectionDone := make(chan struct{})
 	go func() {
+		defer close(collectionDone)
 		for {
 			select {
 			case <-ticker.C:
@@ -79,6 +86,9 @@ func main() {
 					log.Warn("Collection completed with errors", zap.Error(err))
 					// Continue collecting even if there are errors (partial failure handling)
 				}
+			case <-ctx.Done():
+				log.Info("Collection goroutine shutting down...")
+				return
 			}
 		}
 	}()
@@ -87,7 +97,12 @@ func main() {
 
 	// Start data retention cleanup service (daily cleanup)
 	cleanupService := retention.NewCleanupService(repository, 30) // 30 days retention
-	go cleanupService.RunPeriodicCleanup(24 * time.Hour)
+	cleanupDone := make(chan struct{})
+	go func() {
+		defer close(cleanupDone)
+		cleanupService.RunPeriodicCleanupWithContext(ctx, 24*time.Hour)
+		log.Info("Cleanup service goroutine shutting down...")
+	}()
 
 	log.Info("Data retention cleanup service started", zap.Int("retention_days", 30), zap.String("cleanup_interval", "24 hours"))
 
@@ -97,5 +112,29 @@ func main() {
 	<-sigChan
 
 	log.Info("OpenStack Collector Service shutting down...")
+
+	// Cancel context to stop goroutines
+	cancel()
+
+	// Wait for goroutines to finish (with timeout)
+	shutdownTimeout := 10 * time.Second
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer shutdownCancel()
+
+	select {
+	case <-collectionDone:
+		log.Info("Collection goroutine stopped")
+	case <-shutdownCtx.Done():
+		log.Warn("Collection goroutine shutdown timeout")
+	}
+
+	select {
+	case <-cleanupDone:
+		log.Info("Cleanup service goroutine stopped")
+	case <-shutdownCtx.Done():
+		log.Warn("Cleanup service goroutine shutdown timeout")
+	}
+
+	log.Info("OpenStack Collector Service shutdown complete")
 }
 

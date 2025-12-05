@@ -37,12 +37,17 @@ func StreamEvents(repo *storage.Repository) gin.HandlerFunc {
 
 		// Send initial connection event
 		initialEvent := events.Event{
-			Type: events.EventTypeCollectionEnd,
+			Type: events.EventTypeConnection,
 			Data: map[string]interface{}{
 				"message": "Connected to event stream",
 			},
 		}
-		initialEventJSON, _ := json.Marshal(initialEvent)
+		initialEventJSON, err := json.Marshal(initialEvent)
+		if err != nil {
+			log.Printf("Failed to marshal initial event: %v", err)
+			c.JSON(500, gin.H{"error": "Failed to initialize event stream"})
+			return
+		}
 		c.Writer.WriteString("data: " + string(initialEventJSON) + "\n\n")
 		c.Writer.Flush()
 
@@ -55,12 +60,16 @@ func StreamEvents(repo *storage.Repository) gin.HandlerFunc {
 				select {
 				case <-ticker.C:
 					heartbeat := events.Event{
-						Type: events.EventTypeCollectionEnd,
+						Type: events.EventTypeHeartbeat,
 						Data: map[string]interface{}{
 							"message": "heartbeat",
 						},
 					}
-					heartbeatJSON, _ := json.Marshal(heartbeat)
+					heartbeatJSON, err := json.Marshal(heartbeat)
+					if err != nil {
+						log.Printf("Failed to marshal heartbeat event: %v", err)
+						continue
+					}
 					c.Writer.WriteString("data: " + string(heartbeatJSON) + "\n\n")
 					c.Writer.Flush()
 				case <-c.Request.Context().Done():

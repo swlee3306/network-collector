@@ -71,11 +71,10 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := server.Stop(); err != nil {
+	if err := server.Stop(ctx); err != nil {
 		log.Printf("Error during server shutdown: %v", err)
 	}
 
-	<-ctx.Done()
 	log.Println("API Service shutdown complete")
 }
 

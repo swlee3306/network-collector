@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/network-collector/backend/internal/models"
 	"github.com/network-collector/backend/internal/services/storage"
 )
 
@@ -53,9 +55,21 @@ func CompareProjects(repo *storage.Repository) gin.HandlerFunc {
 				continue
 			}
 
-			instances, _ := repo.GetInstancesByProjectID(projectID)
-			networks, _ := repo.GetNetworksByProjectID(projectID)
-			volumes, _ := repo.GetVolumesByProjectID(projectID)
+			instances, err := repo.GetInstancesByProjectID(projectID)
+			if err != nil {
+				log.Printf("Failed to get instances for project %s: %v", projectID, err)
+				instances = []*models.Instance{} // Use empty slice on error
+			}
+			networks, err := repo.GetNetworksByProjectID(projectID)
+			if err != nil {
+				log.Printf("Failed to get networks for project %s: %v", projectID, err)
+				networks = []*models.Network{} // Use empty slice on error
+			}
+			volumes, err := repo.GetVolumesByProjectID(projectID)
+			if err != nil {
+				log.Printf("Failed to get volumes for project %s: %v", projectID, err)
+				volumes = []*models.Volume{} // Use empty slice on error
+			}
 
 			activeInstances := 0
 			for _, instance := range instances {
@@ -93,9 +107,21 @@ func GetProjectResourceSummary(repo *storage.Repository) gin.HandlerFunc {
 			return
 		}
 
-		instances, _ := repo.GetInstancesByProjectID(projectID)
-		networks, _ := repo.GetNetworksByProjectID(projectID)
-		volumes, _ := repo.GetVolumesByProjectID(projectID)
+		instances, err := repo.GetInstancesByProjectID(projectID)
+		if err != nil {
+			log.Printf("Failed to get instances for project %s: %v", projectID, err)
+			instances = []*models.Instance{} // Use empty slice on error
+		}
+		networks, err := repo.GetNetworksByProjectID(projectID)
+		if err != nil {
+			log.Printf("Failed to get networks for project %s: %v", projectID, err)
+			networks = []*models.Network{} // Use empty slice on error
+		}
+		volumes, err := repo.GetVolumesByProjectID(projectID)
+		if err != nil {
+			log.Printf("Failed to get volumes for project %s: %v", projectID, err)
+			volumes = []*models.Volume{} // Use empty slice on error
+		}
 
 		activeInstances := 0
 		for _, instance := range instances {

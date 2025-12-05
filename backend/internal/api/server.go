@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -21,6 +22,7 @@ type Server struct {
 	router     *gin.Engine
 	config     *config.Config
 	repository *storage.Repository
+	httpServer *http.Server
 }
 
 // NewServer creates a new API server
@@ -131,7 +133,7 @@ func (s *Server) Start() error {
 	addr := fmt.Sprintf(":%d", s.config.Server.Port)
 	log.Printf("Starting API server on %s", addr)
 
-	server := &http.Server{
+	s.httpServer = &http.Server{
 		Addr:         addr,
 		Handler:      s.router,
 		ReadTimeout:  15 * time.Second,
@@ -139,14 +141,16 @@ func (s *Server) Start() error {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	return server.ListenAndServe()
+	return s.httpServer.ListenAndServe()
 }
 
 // Stop gracefully stops the server
-func (s *Server) Stop() error {
+func (s *Server) Stop(ctx context.Context) error {
 	log.Println("Stopping API server...")
-	// Add graceful shutdown logic if needed
-	return nil
+	if s.httpServer == nil {
+		return nil
+	}
+	return s.httpServer.Shutdown(ctx)
 }
 
 // Router returns the Gin router (for testing purposes)
