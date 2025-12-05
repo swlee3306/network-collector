@@ -69,7 +69,7 @@ mariadb:
     pullPolicy: IfNotPresent
   storage:
     size: 20Gi
-    storageClass: standard
+    storageClass: local-path  # local-path-storage 사용 (또는 ""로 기본 StorageClass 사용)
   resources:
     requests:
       memory: "512Mi"

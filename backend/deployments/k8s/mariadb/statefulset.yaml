@@ -86,7 +86,7 @@ spec:
       name: mariadb-data
     spec:
       accessModes: [ "ReadWriteOnce" ]
-      storageClassName: standard
+      storageClassName: local-path  # local-path-storage 사용 (또는 ""로 기본 StorageClass 사용)
       resources:
         requests:
           storage: 20Gi
