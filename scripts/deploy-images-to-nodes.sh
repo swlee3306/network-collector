@@ -130,8 +130,17 @@ for node in "${NODES[@]}"; do
             scp "$IMAGE_TAR" "$node:/tmp/"
         fi
         
-        # 이미지 로드
-        ssh "$node" "docker load -i /tmp/network-collector-images.tar && rm /tmp/network-collector-images.tar"
+        # 이미지 로드 (Docker 또는 containerd)
+        ssh "$node" "
+            if command -v docker &> /dev/null; then
+                docker load -i /tmp/network-collector-images.tar && rm /tmp/network-collector-images.tar
+            elif command -v ctr &> /dev/null; then
+                ctr -n k8s.io images import /tmp/network-collector-images.tar && rm /tmp/network-collector-images.tar
+            else
+                echo 'ERROR: Docker 또는 containerd를 찾을 수 없습니다.'
+                exit 1
+            fi
+        "
     else
         # 로컬 노드
         if [ "$node" != "localhost" ] && [ "$node" != "$(hostname)" ]; then
@@ -140,7 +149,14 @@ for node in "${NODES[@]}"; do
         
         # 이미 이미 로드되어 있음 (빌드 노드)
         if [ "$node" != "$BUILD_NODE" ]; then
-            docker load -i "$IMAGE_TAR"
+            if command -v docker &> /dev/null; then
+                docker load -i "$IMAGE_TAR"
+            elif command -v ctr &> /dev/null; then
+                ctr -n k8s.io images import "$IMAGE_TAR"
+            else
+                log_error "Docker 또는 containerd를 찾을 수 없습니다."
+                exit 1
+            fi
         fi
     fi
     
@@ -159,10 +175,20 @@ log_info "배포된 이미지 확인:"
 for node in "${NODES[@]}"; do
     if [[ "$node" == *"@"* ]]; then
         log_info "$node:"
-        ssh "$node" "docker images | grep network-collector" || true
+        ssh "$node" "
+            if command -v docker &> /dev/null; then
+                docker images | grep network-collector || true
+            elif command -v crictl &> /dev/null; then
+                crictl images | grep network-collector || true
+            fi
+        " || true
     else
         log_info "$node:"
-        docker images | grep network-collector || true
+        if command -v docker &> /dev/null; then
+            docker images | grep network-collector || true
+        elif command -v crictl &> /dev/null; then
+            crictl images | grep network-collector || true
+        fi
     fi
 done
 

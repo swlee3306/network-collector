@@ -24,7 +24,7 @@ spec:
       containers:
       - name: api
         image: network-collector-api:latest
-        imagePullPolicy: IfNotPresent  # 로컬에 없으면 pull 시도 (워커 노드 지원)
+        imagePullPolicy: Never  # 로컬 이미지만 사용 (워커 노드에도 이미지 배포 필요)
         command: ["/app/api"]
         ports:
         - containerPort: 8080

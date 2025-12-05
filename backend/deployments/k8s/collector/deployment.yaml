@@ -24,7 +24,7 @@ spec:
       containers:
       - name: collector
         image: network-collector:latest
-        imagePullPolicy: IfNotPresent  # 로컬에 없으면 pull 시도 (워커 노드 지원)
+        imagePullPolicy: Never  # 로컬 이미지만 사용 (워커 노드에도 이미지 배포 필요)
         command: ["/app/collector"]
         env:
         # Database configuration

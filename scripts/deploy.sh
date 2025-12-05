@@ -160,7 +160,7 @@ deploy_helm() {
     log_info "Helm 배포 완료"
 }
 
-# 이미지 확인
+# 이미지 확인 (더 정확한 방법)
 check_images() {
     log_info "이미지 확인 중..."
     
@@ -169,11 +169,12 @@ check_images() {
     
     if command -v docker &> /dev/null; then
         for image in "${IMAGES[@]}"; do
-            if ! docker images | grep -q "$image"; then
+            # docker image inspect를 사용하여 더 정확하게 확인
+            if docker image inspect "$image" &> /dev/null; then
+                log_info "이미지 확인됨: $image"
+            else
                 MISSING_IMAGES+=("$image")
                 log_warn "이미지가 없습니다: $image"
-            else
-                log_info "이미지 확인됨: $image"
             fi
         done
         
@@ -184,6 +185,22 @@ check_images() {
             done
             log_error "먼저 './scripts/build-images.sh'를 실행하여 이미지를 빌드하세요."
             return 1
+        fi
+        
+        # Kubernetes 컨테이너 런타임 확인 및 이미지 import
+        log_info "Kubernetes 컨테이너 런타임 확인 중..."
+        if command -v crictl &> /dev/null; then
+            log_info "containerd/cri-o 감지됨. 이미지를 컨테이너 런타임에 import합니다..."
+            for image in "${IMAGES[@]}"; do
+                # Docker 이미지를 containerd로 import
+                if command -v ctr &> /dev/null; then
+                    log_info "이미지 import 중: $image"
+                    docker save "$image" | ctr -n k8s.io images import - || {
+                        log_warn "ctr로 import 실패, crictl로 시도..."
+                        # crictl은 직접 import를 지원하지 않으므로 docker save/load 사용
+                    }
+                fi
+            done
         fi
     else
         log_warn "Docker가 설치되어 있지 않습니다. 이미지 확인을 건너뜁니다."

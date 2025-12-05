@@ -48,7 +48,7 @@ check_docker() {
     log_info "Docker 확인 완료"
 }
 
-# 이미지 확인
+# 이미지 확인 (더 정확한 방법)
 check_images() {
     log_section "이미지 확인"
     
@@ -56,9 +56,12 @@ check_images() {
     MISSING_IMAGES=()
     
     for image in "${IMAGES[@]}"; do
-        if docker images | grep -q "$image"; then
+        # docker image inspect를 사용하여 더 정확하게 확인
+        if docker image inspect "$image" &> /dev/null; then
             log_info "✓ $image 존재"
-            docker images | grep "$image" | head -1
+            # 이미지 상세 정보 출력
+            docker image inspect "$image" --format '  ID: {{.Id}}' 2>/dev/null | head -1 || true
+            docker image inspect "$image" --format '  Created: {{.Created}}' 2>/dev/null | head -1 || true
         else
             log_warn "✗ $image 없음"
             MISSING_IMAGES+=("$image")
