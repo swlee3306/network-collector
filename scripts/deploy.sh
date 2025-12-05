@@ -160,20 +160,70 @@ deploy_helm() {
     log_info "Helm 배포 완료"
 }
 
+# 이미지 확인
+check_images() {
+    log_info "이미지 확인 중..."
+    
+    IMAGES=("network-collector:latest" "network-collector-api:latest" "network-collector-frontend:latest")
+    MISSING_IMAGES=()
+    
+    if command -v docker &> /dev/null; then
+        for image in "${IMAGES[@]}"; do
+            if ! docker images | grep -q "$image"; then
+                MISSING_IMAGES+=("$image")
+                log_warn "이미지가 없습니다: $image"
+            else
+                log_info "이미지 확인됨: $image"
+            fi
+        done
+        
+        if [ ${#MISSING_IMAGES[@]} -gt 0 ]; then
+            log_error "다음 이미지들이 없습니다:"
+            for img in "${MISSING_IMAGES[@]}"; do
+                echo "  - $img"
+            done
+            log_error "먼저 './scripts/build-images.sh'를 실행하여 이미지를 빌드하세요."
+            return 1
+        fi
+    else
+        log_warn "Docker가 설치되어 있지 않습니다. 이미지 확인을 건너뜁니다."
+    fi
+    
+    return 0
+}
+
 # 배포 상태 확인
 check_status() {
     log_info "배포 상태 확인 중..."
     
     echo
     echo "=== Pod 상태 ==="
-    kubectl get pods -n "$NAMESPACE" | grep -E "network-collector|mariadb"
+    kubectl get pods -n "$NAMESPACE" -o wide | grep -E "network-collector|mariadb" || true
     
     echo
     echo "=== 서비스 상태 ==="
-    kubectl get services -n "$NAMESPACE" | grep -E "network-collector|mariadb"
+    kubectl get services -n "$NAMESPACE" | grep -E "network-collector|mariadb" || true
+    
+    echo
+    log_info "Pod 상세 정보 확인 중..."
+    PODS=$(kubectl get pods -n "$NAMESPACE" -l 'app in (network-collector,network-collector-api,network-collector-frontend)' -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+    
+    if [ -n "$PODS" ]; then
+        for pod in $PODS; do
+            STATUS=$(kubectl get pod "$pod" -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+            NODE=$(kubectl get pod "$pod" -n "$NAMESPACE" -o jsonpath='{.spec.nodeName}' 2>/dev/null || echo "Unknown")
+            echo "  Pod: $pod | 상태: $STATUS | 노드: $NODE"
+            
+            if [ "$STATUS" != "Running" ]; then
+                log_warn "  Pod '$pod'가 실행 중이 아닙니다. 이벤트 확인:"
+                kubectl describe pod "$pod" -n "$NAMESPACE" | grep -A 5 "Events:" | head -10 || true
+            fi
+        done
+    fi
     
     echo
     log_info "배포 상태 확인 완료"
+    log_info "상세 점검: ./scripts/check-deployment.sh"
 }
 
 # 메인 실행
@@ -183,6 +233,15 @@ main() {
     log_info "네임스페이스: $NAMESPACE"
     
     check_prerequisites
+    
+    # 이미지 확인 (Kubernetes 배포 시에만)
+    if [ "$DEPLOYMENT_TYPE" = "k8s" ]; then
+        if ! check_images; then
+            log_error "이미지 확인 실패. 배포를 중단합니다."
+            exit 1
+        fi
+    fi
+    
     get_secrets
     
     if [ "$DEPLOYMENT_TYPE" = "helm" ]; then
@@ -191,10 +250,15 @@ main() {
         deploy_k8s
     fi
     
+    # 배포 후 잠시 대기
+    log_info "Pod 생성 대기 중 (10초)..."
+    sleep 10
+    
     check_status
     
     log_info "배포 완료!"
     log_info "상태 확인: kubectl get pods -n $NAMESPACE"
+    log_info "상세 점검: ./scripts/check-deployment.sh"
 }
 
 main "$@"
