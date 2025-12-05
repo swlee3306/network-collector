@@ -15,10 +15,18 @@ spec:
       labels:
         app: network-collector-frontend
     spec:
+      # 마스터 노드에서만 실행 (워커 노드에 Docker가 없는 경우)
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      # 마스터 노드의 taint 허용 (control-plane 노드는 기본적으로 taint가 있음)
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
       containers:
       - name: frontend
         image: network-collector-frontend:latest
-        imagePullPolicy: IfNotPresent  # 로컬 이미지 우선, 없으면 Pull 시도
+        imagePullPolicy: Never  # 로컬 이미지만 사용 (레지스트리 pull 안 함)
         ports:
         - containerPort: 80
           name: http
