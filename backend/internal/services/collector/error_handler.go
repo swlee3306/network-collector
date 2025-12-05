@@ -84,16 +84,30 @@ func ClassifyOpenStackError(service, operation string, err error) *errors.OpenSt
 	retryable := false
 	errorMsg := err.Error()
 
-	// Network errors, timeouts, and 5xx errors are usually retryable
-	if containsAny(errorMsg, []string{
+	// Check for retryable patterns first (network errors, timeouts, 5xx errors)
+	hasRetryablePattern := containsAny(errorMsg, []string{
 		"timeout", "connection refused", "connection reset",
 		"network", "temporary", "503", "504", "502",
-	}) {
-		retryable = true
-	}
+	})
 
-	// 4xx errors (except 401, 403) are usually not retryable
-	if containsAny(errorMsg, []string{"400", "401", "403", "404", "409"}) {
+	// Check for non-retryable 4xx errors (excluding 401, 403 as per comment)
+	hasNonRetryable4xx := containsAny(errorMsg, []string{"400", "404", "409"})
+
+	// Check for 401/403 (authentication/authorization errors)
+	hasAuthError := containsAny(errorMsg, []string{"401", "403"})
+
+	// Determine retryability:
+	// 1. If retryable patterns found, set to true
+	// 2. If non-retryable 4xx found (and no retryable patterns), set to false
+	// 3. 401/403: retryable if retryable patterns also present, otherwise false
+	if hasRetryablePattern {
+		retryable = true
+		// Even if 401/403 present, keep retryable = true if retryable patterns found
+		// (e.g., "timeout 401" or "network 403" - temporary auth failures)
+	} else if hasNonRetryable4xx {
+		retryable = false
+	} else if hasAuthError {
+		// 401/403 without retryable patterns are not retryable
 		retryable = false
 	}
 

@@ -3,6 +3,7 @@ package handlers
 import (
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/network-collector/backend/internal/models"
@@ -152,7 +153,8 @@ func splitCommaSeparated(s string) []string {
 	for _, char := range s {
 		if char == ',' {
 			if current != "" {
-				result = append(result, current)
+				// Trim whitespace before adding
+				result = append(result, strings.TrimSpace(current))
 				current = ""
 			}
 		} else {
@@ -160,7 +162,8 @@ func splitCommaSeparated(s string) []string {
 		}
 	}
 	if current != "" {
-		result = append(result, current)
+		// Trim whitespace before adding
+		result = append(result, strings.TrimSpace(current))
 	}
 	return result
 }
