@@ -5,6 +5,11 @@
 
 set -e
 
+# 스크립트가 있는 디렉토리로 이동 (프로젝트 루트)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
+
 DEPLOYMENT_TYPE=${1:-k8s}
 NAMESPACE=${2:-default}
 IMAGE_REGISTRY=${IMAGE_REGISTRY:-""}
@@ -131,7 +136,7 @@ deploy_k8s() {
 deploy_helm() {
     log_info "Helm Chart로 배포 중..."
     
-    cd backend/deployments/helm
+    cd "$PROJECT_ROOT/backend/deployments/helm"
     
     helm upgrade --install network-collector . \
         --namespace "$NAMESPACE" \
@@ -150,7 +155,7 @@ deploy_helm() {
         --set frontend.image.repository="${IMAGE_REGISTRY}network-collector-frontend" \
         --set frontend.image.tag="$IMAGE_TAG"
     
-    cd - > /dev/null
+    cd "$PROJECT_ROOT"
     
     log_info "Helm 배포 완료"
 }

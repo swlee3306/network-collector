@@ -5,6 +5,11 @@
 
 set -e
 
+# 스크립트가 있는 디렉토리로 이동 (프로젝트 루트)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
+
 IMAGE_REGISTRY=${1:-""}
 IMAGE_TAG=${2:-latest}
 
@@ -37,9 +42,9 @@ build_collector() {
     
     local image=$(image_name "network-collector")
     
-    cd backend
+    cd "$PROJECT_ROOT/backend"
     docker build -t "$image" -f Dockerfile.collector .
-    cd ..
+    cd "$PROJECT_ROOT"
     
     log_info "Collector 이미지 빌드 완료: $image"
 }
@@ -50,9 +55,9 @@ build_api() {
     
     local image=$(image_name "network-collector-api")
     
-    cd backend
+    cd "$PROJECT_ROOT/backend"
     docker build -t "$image" -f Dockerfile.api .
-    cd ..
+    cd "$PROJECT_ROOT"
     
     log_info "API 이미지 빌드 완료: $image"
 }
@@ -63,9 +68,9 @@ build_frontend() {
     
     local image=$(image_name "network-collector-frontend")
     
-    cd frontend
+    cd "$PROJECT_ROOT/frontend"
     docker build -t "$image" -f Dockerfile .
-    cd ..
+    cd "$PROJECT_ROOT"
     
     log_info "Frontend 이미지 빌드 완료: $image"
 }
