@@ -37,22 +37,23 @@ func createIndexes(db *gorm.DB) error {
 	}
 
 	// Index for timestamp-based queries (for data retention)
+	// Each index must have a unique name across the database
 	if err := db.Exec(`
-		CREATE INDEX IF NOT EXISTS idx_timestamp 
+		CREATE INDEX IF NOT EXISTS idx_instance_metrics_timestamp 
 		ON instance_metrics(timestamp)
 	`).Error; err != nil {
 		return err
 	}
 
 	if err := db.Exec(`
-		CREATE INDEX IF NOT EXISTS idx_timestamp 
+		CREATE INDEX IF NOT EXISTS idx_network_metrics_timestamp 
 		ON network_metrics(timestamp)
 	`).Error; err != nil {
 		return err
 	}
 
 	if err := db.Exec(`
-		CREATE INDEX IF NOT EXISTS idx_timestamp 
+		CREATE INDEX IF NOT EXISTS idx_hypervisor_metrics_timestamp 
 		ON hypervisor_metrics(timestamp)
 	`).Error; err != nil {
 		return err

@@ -323,8 +323,39 @@ func (r *Repository) GetPortsByOpenStackDeviceID(openstackDeviceID string) ([]mo
 func (r *Repository) GetRoutersByNetwork(networkOpenStackID string) ([]models.Router, error) {
 	// This is a simplified implementation
 	// In production, we'd query Neutron API for router-network connections
+	// Router-network connection is through Ports with device_owner like "network:router_interface" or "network:router_gateway"
+	
+	// First, find the network by OpenStack ID
+	var network models.Network
+	if err := r.db.Where("openstack_id = ?", networkOpenStackID).First(&network).Error; err != nil {
+		// Network not found, return empty slice
+		return []models.Router{}, nil
+	}
+	
+	// Find ports on this network that are router interfaces or gateways
+	// Router ports have device_owner starting with "network:router"
+	var routerPorts []models.Port
+	if err := r.db.Where("network_id = ? AND device_owner LIKE ?", network.ID, "network:router%").Find(&routerPorts).Error; err != nil {
+		// No router ports found, return empty slice
+		return []models.Router{}, nil
+	}
+	
+	// Extract router OpenStack IDs from port device_ids
+	// In OpenStack, router ports have device_id equal to router's OpenStack ID
+	var routerOpenStackIDs []string
+	for _, port := range routerPorts {
+		if port.DeviceID != "" {
+			routerOpenStackIDs = append(routerOpenStackIDs, port.DeviceID)
+		}
+	}
+	
+	if len(routerOpenStackIDs) == 0 {
+		return []models.Router{}, nil
+	}
+	
+	// Find routers by their OpenStack IDs
 	var routers []models.Router
-	err := r.db.Find(&routers).Error
+	err := r.db.Where("openstack_id IN ?", routerOpenStackIDs).Find(&routers).Error
 	return routers, err
 }
 
