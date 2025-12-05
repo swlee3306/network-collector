@@ -142,6 +142,18 @@ collector:
 
 ## 빠른 해결 (원격 서버에서)
 
+### 방법 A: 모든 노드에 이미지 배포 스크립트 사용
+
+```bash
+# 모든 노드에 자동으로 이미지 배포
+./scripts/deploy-images-to-nodes.sh k8s-master-01 k8s-worker-01
+
+# 또는 kubectl로 노드 목록 자동 감지
+./scripts/deploy-images-to-nodes.sh
+```
+
+### 방법 B: 수동으로 각 노드에 배포
+
 원격 서버에서 즉시 해결하려면:
 
 ### 1. Deployment 수정 (imagePullPolicy: Never)

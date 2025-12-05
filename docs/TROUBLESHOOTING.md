@@ -404,7 +404,7 @@ resources:
 - API 서비스의 데이터베이스 연결 수 확인
 - 필요시 연결 풀 크기 조정
 
-## ImagePullBackOff 오류
+## ImagePullBackOff / ErrImageNeverPull 오류
 
 ### 증상
 
@@ -412,24 +412,34 @@ resources:
 kubectl get pods
 NAME        READY   STATUS             RESTARTS   AGE
 network-collector-xxx   0/1     ImagePullBackOff   0          30s
+
+# 또는
+Warning  ErrImageNeverPull  Container image "network-collector:latest" is not present with pull policy of Never
 ```
 
 ### 원인
 
-Kubernetes가 컨테이너 이미지를 Pull할 수 없습니다. 일반적으로:
-- 이미지가 레지스트리에 없음
-- 이미지 이름에 레지스트리 경로가 없음
-- 레지스트리 접근 권한 없음
+- **ImagePullBackOff**: Kubernetes가 레지스트리에서 이미지를 Pull할 수 없음
+- **ErrImageNeverPull**: `imagePullPolicy: Never`인데 해당 노드에 이미지가 없음
 
 ### 해결 방법
 
-#### 1. 원격 서버에서 이미지 빌드
+#### 1. 모든 노드에 이미지 배포 (권장)
 
 ```bash
-# 원격 서버에서
-cd /path/to/network-collector
+# 자동 배포 스크립트 사용
+./scripts/deploy-images-to-nodes.sh k8s-master-01 k8s-worker-01
 
-# 이미지 빌드
+# 또는 kubectl로 노드 자동 감지
+./scripts/deploy-images-to-nodes.sh
+```
+
+#### 2. 수동으로 각 노드에 이미지 빌드
+
+```bash
+# 각 노드에서 실행
+ssh user@k8s-worker-01
+cd /path/to/network-collector
 cd backend
 docker build -t network-collector:latest -f Dockerfile.collector .
 docker build -t network-collector-api:latest -f Dockerfile.api .
@@ -437,24 +447,32 @@ cd ../frontend
 docker build -t network-collector-frontend:latest -f Dockerfile .
 ```
 
-#### 2. imagePullPolicy를 Never로 변경
+#### 3. 이미지를 tar로 저장하고 로드
 
 ```bash
-# Deployment 수정
-kubectl patch deployment network-collector -p '{"spec":{"template":{"spec":{"containers":[{"name":"collector","imagePullPolicy":"Never"}]}}}}'
-kubectl patch deployment network-collector-api -p '{"spec":{"template":{"spec":{"containers":[{"name":"api","imagePullPolicy":"Never"}]}}}}'
-kubectl patch deployment network-collector-frontend -p '{"spec":{"template":{"spec":{"containers":[{"name":"frontend","imagePullPolicy":"Never"}]}}}}'
+# 한 노드에서 빌드 및 저장
+docker save network-collector:latest network-collector-api:latest network-collector-frontend:latest -o images.tar
+
+# 다른 노드에 복사 및 로드
+scp images.tar user@k8s-worker-01:/tmp/
+ssh user@k8s-worker-01 "docker load -i /tmp/images.tar"
 ```
 
-#### 3. Pod 재시작
+#### 4. imagePullPolicy를 IfNotPresent로 변경
 
 ```bash
+# Deployment 재적용 (이미 수정됨)
+kubectl apply -f backend/deployments/k8s/collector/deployment.yaml
+kubectl apply -f backend/deployments/k8s/api/deployment.yaml
+kubectl apply -f backend/deployments/k8s/frontend/deployment.yaml
+
+# Pod 재시작
 kubectl rollout restart deployment/network-collector
 kubectl rollout restart deployment/network-collector-api
 kubectl rollout restart deployment/network-collector-frontend
 ```
 
-자세한 내용은 [이미지 빌드 가이드](./IMAGE_BUILD.md)를 참조하세요.
+자세한 내용은 [이미지 빌드 가이드](./IMAGE_BUILD.md)와 [원격 배포 가이드](./REMOTE_DEPLOYMENT.md)를 참조하세요.
 
 ## 추가 리소스
 
