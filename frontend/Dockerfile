@@ -1,5 +1,5 @@
 # Multi-stage build for Frontend
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
@@ -7,12 +7,18 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci
+# npm ci 대신 npm install 사용 (package-lock.json 동기화 문제 해결)
+# 또는 package-lock.json이 최신이면 npm ci 사용 가능
+RUN npm install
 
 # Copy source code
 COPY . .
 
 # Build the application
+# 환경 변수 설정 (빌드 시점에 필요)
+ARG REACT_APP_API_URL
+ENV REACT_APP_API_URL=${REACT_APP_API_URL}
+
 RUN npm run build
 
 # Production stage
