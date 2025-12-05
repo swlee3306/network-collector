@@ -100,9 +100,10 @@ func (s *Server) setupRoutes() {
 			protected.GET("/instances", handlers.ListInstances(s.repository))
 			protected.GET("/instances/:id", handlers.GetInstance(s.repository))
 			protected.GET("/projects", handlers.ListProjects(s.repository))
-			protected.GET("/projects/:id", handlers.GetProject(s.repository))
-			protected.GET("/projects/:id/summary", handlers.GetProjectResourceSummary(s.repository))
+			// Register specific routes before parameterized routes to avoid route conflicts
 			protected.GET("/projects/compare", handlers.CompareProjects(s.repository))
+			protected.GET("/projects/:id/summary", handlers.GetProjectResourceSummary(s.repository))
+			protected.GET("/projects/:id", handlers.GetProject(s.repository))
 			protected.GET("/networks", handlers.ListNetworks(s.repository))
 			protected.GET("/networks/:id", handlers.GetNetwork(s.repository))
 			protected.GET("/hypervisors", handlers.ListHypervisors(s.repository))
