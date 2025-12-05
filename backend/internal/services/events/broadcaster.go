@@ -56,8 +56,10 @@ func (b *Broadcaster) Unsubscribe(ch chan Event) {
 	defer b.mu.Unlock()
 
 	if b.clients[ch] {
-		close(ch)
+		// Remove from map first to prevent Broadcast from sending to this channel
 		delete(b.clients, ch)
+		// Close channel after removal to avoid race condition with Broadcast
+		close(ch)
 		log.Printf("Client unsubscribed. Total clients: %d", len(b.clients))
 	}
 }
@@ -77,6 +79,17 @@ func (b *Broadcaster) Broadcast(event Event) {
 
 	// Send to all clients (without holding lock to avoid blocking)
 	for _, ch := range clients {
+		// Check if channel is still in the map before sending
+		// This prevents sending to a channel that was closed by Unsubscribe
+		b.mu.RLock()
+		stillSubscribed := b.clients[ch]
+		b.mu.RUnlock()
+
+		if !stillSubscribed {
+			// Channel was unsubscribed, skip it
+			continue
+		}
+
 		// Create a new event instance with timestamp for each client
 		// This prevents race conditions if event is modified concurrently
 		eventCopy := Event{
@@ -89,13 +102,23 @@ func (b *Broadcaster) Broadcast(event Event) {
 			eventCopy.Data[k] = v
 		}
 
-		select {
-		case ch <- eventCopy:
-			// Event sent successfully
-		default:
-			// Channel is full, skip this client
-			log.Printf("Client channel full, skipping broadcast")
-		}
+		// Use select with a default case to handle closed channels gracefully
+		// If channel is closed, the send will panic, so we use recover to catch it
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// Channel was closed, skip this client
+					log.Printf("Channel closed during broadcast, skipping client")
+				}
+			}()
+			select {
+			case ch <- eventCopy:
+				// Event sent successfully
+			default:
+				// Channel is full, skip this client
+				log.Printf("Client channel full, skipping broadcast")
+			}
+		}()
 	}
 }
 
