@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -11,17 +12,10 @@ import (
 	"github.com/network-collector/backend/internal/services/storage"
 )
 
-var globalBroadcaster *events.Broadcaster
-
-// SetEventBroadcaster sets the global event broadcaster
-func SetEventBroadcaster(broadcaster *events.Broadcaster) {
-	globalBroadcaster = broadcaster
-}
-
 // StreamEvents streams real-time events using Server-Sent Events (SSE)
-func StreamEvents(repo *storage.Repository) gin.HandlerFunc {
+func StreamEvents(repo *storage.Repository, broadcaster *events.Broadcaster) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if globalBroadcaster == nil {
+		if broadcaster == nil {
 			c.JSON(500, gin.H{"error": "Event broadcaster not initialized"})
 			return
 		}
@@ -33,8 +27,8 @@ func StreamEvents(repo *storage.Repository) gin.HandlerFunc {
 		c.Header("X-Accel-Buffering", "no")
 
 		// Subscribe to events
-		eventChan := globalBroadcaster.Subscribe()
-		defer globalBroadcaster.Unsubscribe(eventChan)
+		eventChan := broadcaster.Subscribe()
+		defer broadcaster.Unsubscribe(eventChan)
 
 		// Send initial connection event
 		initialEvent := events.Event{
@@ -65,10 +59,13 @@ func StreamEvents(repo *storage.Repository) gin.HandlerFunc {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 
+		// Use WaitGroup for proper goroutine coordination
+		var wg sync.WaitGroup
+		wg.Add(1)
+
 		// Heartbeat goroutine with proper cleanup
-		heartbeatDone := make(chan struct{})
 		go func() {
-			defer close(heartbeatDone)
+			defer wg.Done()
 			for {
 				select {
 				case <-ticker.C:
@@ -103,45 +100,53 @@ func StreamEvents(repo *storage.Repository) gin.HandlerFunc {
 		}()
 
 		// Stream events to client
-		for {
-			select {
-			case event, ok := <-eventChan:
-				if !ok {
-					// Channel closed, wait for heartbeat goroutine to finish
-					<-heartbeatDone
-					return
-				}
-
-				eventJSON, err := json.Marshal(event)
-				if err != nil {
-					log.Printf("Failed to marshal event: %v", err)
-					continue
-				}
-
-				// Check if context is cancelled before writing
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for {
 				select {
-				case <-ctx.Done():
-					// Wait for heartbeat goroutine to finish
-					<-heartbeatDone
-					return
-				default:
-					// Write SSE format: "data: {json}\n\n"
-					if _, err := c.Writer.WriteString("data: " + string(eventJSON) + "\n\n"); err != nil {
-						log.Printf("Failed to write event: %v", err)
-						// Wait for heartbeat goroutine to finish
-						<-heartbeatDone
+				case event, ok := <-eventChan:
+					if !ok {
+						// Channel closed
 						return
 					}
-					if flusher, ok := c.Writer.(http.Flusher); ok {
-						flusher.Flush()
-					}
-				}
 
-			case <-ctx.Done():
-				// Wait for heartbeat goroutine to finish
-				<-heartbeatDone
-				return
+					eventJSON, err := json.Marshal(event)
+					if err != nil {
+						log.Printf("Failed to marshal event: %v", err)
+						continue
+					}
+
+					// Check if context is cancelled before writing
+					select {
+					case <-ctx.Done():
+						return
+					default:
+						// Write SSE format: "data: {json}\n\n"
+						if _, err := c.Writer.WriteString("data: " + string(eventJSON) + "\n\n"); err != nil {
+							log.Printf("Failed to write event: %v", err)
+							return
+						}
+						if flusher, ok := c.Writer.(http.Flusher); ok {
+							flusher.Flush()
+						}
+					}
+
+				case <-ctx.Done():
+					return
+				}
 			}
+		}()
+
+		// Wait for either context cancellation or event loop completion
+		select {
+		case <-ctx.Done():
+			// Context cancelled, wait for goroutines to finish
+			wg.Wait()
+			<-done
+		case <-done:
+			// Event loop completed, wait for heartbeat goroutine
+			wg.Wait()
 		}
 	}
 }

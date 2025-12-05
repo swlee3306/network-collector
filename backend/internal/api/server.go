@@ -19,10 +19,11 @@ import (
 
 // Server represents the API server
 type Server struct {
-	router     *gin.Engine
-	config     *config.Config
-	repository *storage.Repository
-	httpServer *http.Server
+	router      *gin.Engine
+	config      *config.Config
+	repository  *storage.Repository
+	broadcaster *events.Broadcaster
+	httpServer  *http.Server
 }
 
 // NewServer creates a new API server
@@ -40,16 +41,14 @@ func NewServer(cfg *config.Config, db *gorm.DB, broadcaster *events.Broadcaster)
 	repository := storage.NewRepository(db)
 
 	server := &Server{
-		router:     router,
-		config:     cfg,
-		repository: repository,
+		router:      router,
+		config:      cfg,
+		repository:  repository,
+		broadcaster: broadcaster,
 	}
 
 	// Setup middleware
 	server.setupMiddleware()
-
-	// Set event broadcaster for handlers
-	handlers.SetEventBroadcaster(broadcaster)
 
 	// Setup routes
 	server.setupRoutes()
@@ -124,7 +123,7 @@ func (s *Server) setupRoutes() {
 			protected.GET("/metrics/hypervisors/:id", handlers.GetHypervisorMetrics(s.repository))
 
 			// Real-time events (SSE)
-			protected.GET("/events/stream", handlers.StreamEvents(s.repository))
+			protected.GET("/events/stream", handlers.StreamEvents(s.repository, s.broadcaster))
 		}
 	}
 }

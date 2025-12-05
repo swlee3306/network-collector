@@ -138,7 +138,10 @@ func (c *NetworkCollector) savePort(port ports.Port) error {
 	deviceID := port.DeviceID
 
 	// Serialize fixed IPs to JSON
-	fixedIPsJSON, _ := json.Marshal(port.FixedIPs)
+	fixedIPsJSON, err := json.Marshal(port.FixedIPs)
+	if err != nil {
+		return fmt.Errorf("failed to marshal port fixed IPs: %w", err)
+	}
 
 	dbPort := &models.Port{
 		OpenStackID: port.ID,
@@ -185,7 +188,10 @@ func (c *NetworkCollector) CollectRouters() error {
 
 // saveRouter saves a single router to database
 func (c *NetworkCollector) saveRouter(router routers.Router) error {
-	externalGatewayJSON, _ := json.Marshal(router.GatewayInfo)
+	externalGatewayJSON, err := json.Marshal(router.GatewayInfo)
+	if err != nil {
+		return fmt.Errorf("failed to marshal router gateway info: %w", err)
+	}
 
 	dbRouter := &models.Router{
 		OpenStackID:       router.ID,

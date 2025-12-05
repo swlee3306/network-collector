@@ -3,6 +3,7 @@ package collector
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/network-collector/backend/pkg/errors"
@@ -117,12 +118,8 @@ func ClassifyOpenStackError(service, operation string, err error) *errors.OpenSt
 // Helper function to check if string contains any of the substrings
 func containsAny(s string, substrings []string) bool {
 	for _, substr := range substrings {
-		if len(s) >= len(substr) {
-			for i := 0; i <= len(s)-len(substr); i++ {
-				if s[i:i+len(substr)] == substr {
-					return true
-				}
-			}
+		if strings.Contains(s, substr) {
+			return true
 		}
 	}
 	return false
