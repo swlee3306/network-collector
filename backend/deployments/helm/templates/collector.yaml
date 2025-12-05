@@ -1,0 +1,110 @@
+{{- if .Values.collector.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "network-collector.fullname" . }}-collector
+  labels:
+    {{- include "network-collector.labels" . | nindent 4 }}
+    app: collector
+spec:
+  replicas: {{ .Values.collector.replicas }}
+  selector:
+    matchLabels:
+      app: collector
+      {{- include "network-collector.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app: collector
+        {{- include "network-collector.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: collector
+        image: {{ .Values.collector.image.repository }}:{{ .Values.collector.image.tag }}
+        imagePullPolicy: {{ .Values.collector.image.pullPolicy }}
+        command: ["/app/collector"]
+        env:
+        # Database configuration
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "network-collector.fullname" . }}-config
+              key: DB_HOST
+        - name: DB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "network-collector.fullname" . }}-config
+              key: DB_PORT
+        - name: DB_USER
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "network-collector.fullname" . }}-config
+              key: DB_USER
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "network-collector.fullname" . }}-secrets
+              key: DB_PASSWORD
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "network-collector.fullname" . }}-config
+              key: DB_NAME
+        # OpenStack configuration
+        - name: OPENSTACK_AUTH_URL
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "network-collector.fullname" . }}-secrets
+              key: OPENSTACK_AUTH_URL
+        - name: OPENSTACK_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "network-collector.fullname" . }}-secrets
+              key: OPENSTACK_USERNAME
+        - name: OPENSTACK_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "network-collector.fullname" . }}-secrets
+              key: OPENSTACK_PASSWORD
+        - name: OPENSTACK_PROJECT_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "network-collector.fullname" . }}-secrets
+              key: OPENSTACK_PROJECT_ID
+        - name: OPENSTACK_DOMAIN_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "network-collector.fullname" . }}-config
+              key: OPENSTACK_DOMAIN_NAME
+        # Logging configuration
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "network-collector.fullname" . }}-config
+              key: LOG_LEVEL
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "network-collector.fullname" . }}-config
+              key: ENVIRONMENT
+        resources:
+          {{- toYaml .Values.collector.resources | nindent 10 }}
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep collector | grep -v grep"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep collector | grep -v grep"
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      restartPolicy: Always
+{{- end }}
+

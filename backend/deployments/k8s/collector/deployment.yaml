@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: network-collector
+  namespace: default
+  labels:
+    app: network-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: network-collector
+  template:
+    metadata:
+      labels:
+        app: network-collector
+    spec:
+      containers:
+      - name: collector
+        image: network-collector:latest
+        imagePullPolicy: IfNotPresent
+        command: ["/app/collector"]
+        env:
+        # Database configuration
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: network-collector-config
+              key: DB_HOST
+        - name: DB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: network-collector-config
+              key: DB_PORT
+        - name: DB_USER
+          valueFrom:
+            configMapKeyRef:
+              name: network-collector-config
+              key: DB_USER
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: network-collector-secrets
+              key: DB_PASSWORD
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: network-collector-config
+              key: DB_NAME
+        # OpenStack configuration
+        - name: OPENSTACK_AUTH_URL
+          valueFrom:
+            secretKeyRef:
+              name: network-collector-secrets
+              key: OPENSTACK_AUTH_URL
+        - name: OPENSTACK_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: network-collector-secrets
+              key: OPENSTACK_USERNAME
+        - name: OPENSTACK_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: network-collector-secrets
+              key: OPENSTACK_PASSWORD
+        - name: OPENSTACK_PROJECT_ID
+          valueFrom:
+            secretKeyRef:
+              name: network-collector-secrets
+              key: OPENSTACK_PROJECT_ID
+        - name: OPENSTACK_DOMAIN_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: network-collector-config
+              key: OPENSTACK_DOMAIN_NAME
+        # Logging configuration
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: network-collector-config
+              key: LOG_LEVEL
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: network-collector-config
+              key: ENVIRONMENT
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep collector | grep -v grep"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "ps aux | grep collector | grep -v grep"
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      restartPolicy: Always
+

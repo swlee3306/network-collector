@@ -1,0 +1,106 @@
+package collector
+
+import (
+	"fmt"
+
+	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
+	"github.com/network-collector/backend/internal/models"
+	"github.com/network-collector/backend/internal/services/storage"
+	"github.com/network-collector/backend/pkg/openstack"
+)
+
+// InstanceCollector collects instance data from OpenStack
+type InstanceCollector struct {
+	client     *openstack.Client
+	repository *storage.Repository
+}
+
+// NewInstanceCollector creates a new instance collector
+func NewInstanceCollector(client *openstack.Client, repository *storage.Repository) *InstanceCollector {
+	return &InstanceCollector{
+		client:     client,
+		repository: repository,
+	}
+}
+
+// CollectInstances collects all instances from OpenStack
+func (c *InstanceCollector) CollectInstances() error {
+	openstackServers, err := c.client.ListServers()
+	if err != nil {
+		return fmt.Errorf("failed to list servers: %w", err)
+	}
+
+	var errors []error
+	successCount := 0
+
+	for _, server := range openstackServers {
+		if err := c.saveInstance(server); err != nil {
+			errors = append(errors, fmt.Errorf("failed to save instance %s: %w", server.ID, err))
+			continue
+		}
+		successCount++
+	}
+
+	// Return error if all failed, otherwise return partial error info
+	if len(errors) == len(openstackServers) {
+		return fmt.Errorf("all instances failed to collect: %d errors", len(errors))
+	}
+
+	if len(errors) > 0 {
+		// Partial failure - log but don't fail completely
+		// This aligns with FR-012: partial failure shows partial data
+		return fmt.Errorf("partial failure: %d succeeded, %d failed", successCount, len(errors))
+	}
+
+	return nil
+}
+
+// saveInstance saves a single instance to database
+func (c *InstanceCollector) saveInstance(server servers.Server) error {
+	// Get or create project
+	var projectID string
+	if server.TenantID != "" {
+		project, err := c.repository.GetProjectByOpenStackID(server.TenantID)
+		if err != nil {
+			// Project might not exist yet, will be collected separately
+			// Store project_id as string for now
+			projectID = server.TenantID
+		} else {
+			projectID = project.ID
+		}
+	}
+
+	// Get or create flavor
+	var flavorID string
+	if flavorIDStr, ok := server.Flavor["id"].(string); ok {
+		flavor, err := c.repository.GetFlavorByOpenStackID(flavorIDStr)
+		if err != nil {
+			// Flavor might not exist yet, will be collected separately
+			flavorID = flavorIDStr
+		} else {
+			flavorID = flavor.ID
+		}
+	}
+
+	// Get hypervisor ID from server details
+	var hypervisorID string
+	if server.HostID != "" {
+		// Try to find hypervisor by hostname or host_id
+		// This will be improved when we collect hypervisors
+		hypervisorID = server.HostID
+	}
+
+	instance := &models.Instance{
+		OpenStackID:  server.ID,
+		Name:         server.Name,
+		Status:       server.Status,
+		ProjectID:    projectID,
+		FlavorID:     flavorID,
+		HypervisorID: hypervisorID,
+		CreatedAt:    server.Created,
+		UpdatedAt:    server.Updated,
+	}
+
+	return c.repository.UpsertInstance(instance)
+}
+

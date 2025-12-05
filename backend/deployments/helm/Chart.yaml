@@ -1,0 +1,17 @@
+apiVersion: v2
+name: network-collector
+description: A Helm chart for OpenStack Monitoring System
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - openstack
+  - monitoring
+  - network
+  - topology
+maintainers:
+  - name: Network Collector Team
+home: https://github.com/network-collector/network-collector
+sources:
+  - https://github.com/network-collector/network-collector
+

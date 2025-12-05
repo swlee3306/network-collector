@@ -1,0 +1,248 @@
+package openstack
+
+import (
+	"time"
+
+	"github.com/gophercloud/gophercloud"
+	"github.com/gophercloud/gophercloud/openstack"
+	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
+	"github.com/gophercloud/gophercloud/openstack/networking/v2/networks"
+	"github.com/gophercloud/gophercloud/openstack/networking/v2/ports"
+	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/layer3/routers"
+	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/hypervisors"
+	"github.com/gophercloud/gophercloud/openstack/compute/v2/flavors"
+	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumes"
+	"github.com/gophercloud/gophercloud/openstack/identity/v3/projects"
+	"github.com/network-collector/backend/pkg/errors"
+)
+
+// Config holds OpenStack client configuration
+type Config struct {
+	AuthURL    string
+	Username   string
+	Password   string
+	ProjectID  string
+	DomainName string
+}
+
+// Client wraps OpenStack API clients
+type Client struct {
+	provider *gophercloud.ProviderClient
+	nova     *gophercloud.ServiceClient
+	neutron  *gophercloud.ServiceClient
+	cinder   *gophercloud.ServiceClient
+	keystone *gophercloud.ServiceClient
+}
+
+// NewClient creates a new OpenStack client
+func NewClient(config Config) (*Client, error) {
+	opts := gophercloud.AuthOptions{
+		IdentityEndpoint: config.AuthURL,
+		Username:         config.Username,
+		Password:         config.Password,
+		DomainName:       config.DomainName,
+		TenantID:         config.ProjectID,
+	}
+
+	provider, err := openstack.AuthenticatedClient(opts)
+	if err != nil {
+		return nil, errors.NewOpenStackError("keystone", "authenticate", err, true)
+	}
+
+	// Set token expiration and refresh logic
+	provider.HTTPClient.Timeout = 30 * time.Second
+
+	// Get service clients
+	nova, err := openstack.NewComputeV2(provider, gophercloud.EndpointOpts{})
+	if err != nil {
+		return nil, errors.NewOpenStackError("nova", "create_client", err, true)
+	}
+
+	neutron, err := openstack.NewNetworkV2(provider, gophercloud.EndpointOpts{})
+	if err != nil {
+		return nil, errors.NewOpenStackError("neutron", "create_client", err, true)
+	}
+
+	cinder, err := openstack.NewBlockStorageV3(provider, gophercloud.EndpointOpts{})
+	if err != nil {
+		return nil, errors.NewOpenStackError("cinder", "create_client", err, true)
+	}
+
+	keystone, err := openstack.NewIdentityV3(provider, gophercloud.EndpointOpts{})
+	if err != nil {
+		return nil, errors.NewOpenStackError("keystone", "create_client", err, true)
+	}
+
+	return &Client{
+		provider: provider,
+		nova:     nova,
+		neutron:  neutron,
+		cinder:   cinder,
+		keystone: keystone,
+	}, nil
+}
+
+// GetNovaClient returns the Nova (Compute) service client
+func (c *Client) GetNovaClient() *gophercloud.ServiceClient {
+	return c.nova
+}
+
+// GetNeutronClient returns the Neutron (Networking) service client
+func (c *Client) GetNeutronClient() *gophercloud.ServiceClient {
+	return c.neutron
+}
+
+// GetCinderClient returns the Cinder (Block Storage) service client
+func (c *Client) GetCinderClient() *gophercloud.ServiceClient {
+	return c.cinder
+}
+
+// GetKeystoneClient returns the Keystone (Identity) service client
+func (c *Client) GetKeystoneClient() *gophercloud.ServiceClient {
+	return c.keystone
+}
+
+// RefreshToken refreshes the authentication token if needed
+func (c *Client) RefreshToken() error {
+	// Token refresh logic will be handled by gophercloud automatically
+	// This method can be used for manual refresh if needed
+	return nil
+}
+
+// Nova API wrappers
+
+// ListServers lists all servers
+func (c *Client) ListServers() ([]servers.Server, error) {
+	allPages, err := servers.List(c.nova, servers.ListOpts{}).AllPages()
+	if err != nil {
+		return nil, errors.NewOpenStackError("nova", "list_servers", err, true)
+	}
+
+	allServers, err := servers.ExtractServers(allPages)
+	if err != nil {
+		return nil, errors.NewOpenStackError("nova", "extract_servers", err, false)
+	}
+
+	return allServers, nil
+}
+
+// GetServer gets a specific server by ID
+func (c *Client) GetServer(serverID string) (*servers.Server, error) {
+	server, err := servers.Get(c.nova, serverID).Extract()
+	if err != nil {
+		return nil, errors.NewOpenStackError("nova", "get_server", err, true)
+	}
+	return server, nil
+}
+
+// ListHypervisors lists all hypervisors
+func (c *Client) ListHypervisors() ([]hypervisors.Hypervisor, error) {
+	allPages, err := hypervisors.List(c.nova, hypervisors.ListOpts{}).AllPages()
+	if err != nil {
+		return nil, errors.NewOpenStackError("nova", "list_hypervisors", err, true)
+	}
+
+	allHypervisors, err := hypervisors.ExtractHypervisors(allPages)
+	if err != nil {
+		return nil, errors.NewOpenStackError("nova", "extract_hypervisors", err, false)
+	}
+
+	return allHypervisors, nil
+}
+
+// ListFlavors lists all flavors
+func (c *Client) ListFlavors() ([]flavors.Flavor, error) {
+	allPages, err := flavors.ListDetail(c.nova, flavors.ListOpts{}).AllPages()
+	if err != nil {
+		return nil, errors.NewOpenStackError("nova", "list_flavors", err, true)
+	}
+
+	allFlavors, err := flavors.ExtractFlavors(allPages)
+	if err != nil {
+		return nil, errors.NewOpenStackError("nova", "extract_flavors", err, false)
+	}
+
+	return allFlavors, nil
+}
+
+// Neutron API wrappers
+
+// ListNetworks lists all networks
+func (c *Client) ListNetworks() ([]networks.Network, error) {
+	allPages, err := networks.List(c.neutron, networks.ListOpts{}).AllPages()
+	if err != nil {
+		return nil, errors.NewOpenStackError("neutron", "list_networks", err, true)
+	}
+
+	allNetworks, err := networks.ExtractNetworks(allPages)
+	if err != nil {
+		return nil, errors.NewOpenStackError("neutron", "extract_networks", err, false)
+	}
+
+	return allNetworks, nil
+}
+
+// ListPorts lists all ports
+func (c *Client) ListPorts(opts ports.ListOpts) ([]ports.Port, error) {
+	allPages, err := ports.List(c.neutron, opts).AllPages()
+	if err != nil {
+		return nil, errors.NewOpenStackError("neutron", "list_ports", err, true)
+	}
+
+	allPorts, err := ports.ExtractPorts(allPages)
+	if err != nil {
+		return nil, errors.NewOpenStackError("neutron", "extract_ports", err, false)
+	}
+
+	return allPorts, nil
+}
+
+// ListRouters lists all routers
+func (c *Client) ListRouters() ([]routers.Router, error) {
+	allPages, err := routers.List(c.neutron, routers.ListOpts{}).AllPages()
+	if err != nil {
+		return nil, errors.NewOpenStackError("neutron", "list_routers", err, true)
+	}
+
+	allRouters, err := routers.ExtractRouters(allPages)
+	if err != nil {
+		return nil, errors.NewOpenStackError("neutron", "extract_routers", err, false)
+	}
+
+	return allRouters, nil
+}
+
+// Cinder API wrappers
+
+// ListVolumes lists all volumes
+func (c *Client) ListVolumes() ([]volumes.Volume, error) {
+	allPages, err := volumes.List(c.cinder, volumes.ListOpts{}).AllPages()
+	if err != nil {
+		return nil, errors.NewOpenStackError("cinder", "list_volumes", err, true)
+	}
+
+	allVolumes, err := volumes.ExtractVolumes(allPages)
+	if err != nil {
+		return nil, errors.NewOpenStackError("cinder", "extract_volumes", err, false)
+	}
+
+	return allVolumes, nil
+}
+
+// Keystone API wrappers
+
+// ListProjects lists all projects
+func (c *Client) ListProjects() ([]projects.Project, error) {
+	allPages, err := projects.List(c.keystone, projects.ListOpts{}).AllPages()
+	if err != nil {
+		return nil, errors.NewOpenStackError("keystone", "list_projects", err, true)
+	}
+
+	allProjects, err := projects.ExtractProjects(allPages)
+	if err != nil {
+		return nil, errors.NewOpenStackError("keystone", "extract_projects", err, false)
+	}
+
+	return allProjects, nil
+}
+

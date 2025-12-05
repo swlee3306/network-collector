@@ -1,0 +1,148 @@
+# 배포 스크립트
+
+이 디렉토리에는 OpenStack 모니터링 시스템의 배포 및 관리를 위한 스크립트가 포함되어 있습니다.
+
+## 스크립트 목록
+
+### build-images.sh
+
+Docker 이미지를 빌드하는 스크립트입니다.
+
+**사용법:**
+```bash
+# 로컬 이미지 빌드
+./scripts/build-images.sh
+
+# 레지스트리에 푸시할 이미지 빌드
+./scripts/build-images.sh your-registry.io latest
+```
+
+**예시:**
+```bash
+# 로컬 이미지 빌드
+./scripts/build-images.sh
+
+# Docker Hub에 푸시할 이미지 빌드
+./scripts/build-images.sh your-username latest
+
+# 프라이빗 레지스트리에 푸시할 이미지 빌드
+./scripts/build-images.sh registry.example.com v1.0.0
+```
+
+### deploy.sh
+
+Kubernetes 또는 Helm을 사용하여 시스템을 배포하는 스크립트입니다.
+
+**사용법:**
+```bash
+# Kubernetes 매니페스트로 배포
+./scripts/deploy.sh k8s [namespace]
+
+# Helm Chart로 배포
+./scripts/deploy.sh helm [namespace]
+```
+
+**예시:**
+```bash
+# 기본 네임스페이스에 Kubernetes로 배포
+./scripts/deploy.sh k8s
+
+# 특정 네임스페이스에 Helm으로 배포
+./scripts/deploy.sh helm monitoring
+
+# 환경 변수로 이미지 레지스트리 설정
+IMAGE_REGISTRY=your-registry.io/ IMAGE_TAG=v1.0.0 ./scripts/deploy.sh helm
+```
+
+**환경 변수:**
+- `IMAGE_REGISTRY`: 이미지 레지스트리 URL (예: `your-registry.io/`)
+- `IMAGE_TAG`: 이미지 태그 (기본값: `latest`)
+
+### undeploy.sh
+
+배포된 시스템을 제거하는 스크립트입니다.
+
+**사용법:**
+```bash
+# Kubernetes 배포 제거
+./scripts/undeploy.sh k8s [namespace]
+
+# Helm 배포 제거
+./scripts/undeploy.sh helm [namespace]
+```
+
+**예시:**
+```bash
+# 기본 네임스페이스에서 Kubernetes 배포 제거
+./scripts/undeploy.sh k8s
+
+# 특정 네임스페이스에서 Helm 배포 제거
+./scripts/undeploy.sh helm monitoring
+```
+
+## 전체 배포 워크플로우
+
+### 1. 이미지 빌드 및 푸시
+
+```bash
+# 이미지 빌드
+./scripts/build-images.sh your-registry.io latest
+
+# 이미지 푸시 (Docker Hub 예시)
+docker push your-registry.io/network-collector:latest
+docker push your-registry.io/network-collector-api:latest
+docker push your-registry.io/network-collector-frontend:latest
+```
+
+### 2. 배포
+
+```bash
+# Helm으로 배포
+IMAGE_REGISTRY=your-registry.io/ IMAGE_TAG=latest ./scripts/deploy.sh helm
+```
+
+### 3. 상태 확인
+
+```bash
+kubectl get pods
+kubectl get services
+kubectl logs -f deployment/network-collector
+```
+
+### 4. 제거
+
+```bash
+./scripts/undeploy.sh helm
+```
+
+## 주의사항
+
+1. **Secret 관리**: 배포 스크립트는 Secret 값을 대화형으로 입력받습니다. 프로덕션 환경에서는 Secret 관리 도구(예: Sealed Secrets, External Secrets)를 사용하는 것이 좋습니다.
+
+2. **이미지 레지스트리**: 이미지를 빌드한 후 반드시 레지스트리에 푸시해야 Kubernetes에서 Pull할 수 있습니다.
+
+3. **네임스페이스**: 기본 네임스페이스는 `default`입니다. 프로덕션 환경에서는 별도의 네임스페이스를 사용하는 것이 좋습니다.
+
+4. **데이터 백업**: 제거 전에 데이터베이스 데이터를 백업하는 것을 권장합니다.
+
+## 트러블슈팅
+
+### 스크립트 실행 권한 오류
+
+```bash
+chmod +x scripts/*.sh
+```
+
+### kubectl 연결 오류
+
+```bash
+kubectl cluster-info
+# 클러스터 연결 확인
+```
+
+### 이미지 Pull 실패
+
+1. 이미지가 레지스트리에 푸시되었는지 확인
+2. Kubernetes 노드에서 레지스트리 접근 가능한지 확인
+3. imagePullSecrets 설정 확인
+

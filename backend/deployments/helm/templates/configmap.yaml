@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "network-collector.fullname" . }}-config
+  labels:
+    {{- include "network-collector.labels" . | nindent 4 }}
+data:
+  # Database configuration
+  DB_HOST: {{ .Values.mariadb.enabled | ternary (printf "%s-mariadb" (include "network-collector.fullname" .)) .Values.database.host | quote }}
+  DB_PORT: {{ .Values.database.port | quote }}
+  DB_USER: {{ .Values.database.user | quote }}
+  DB_NAME: {{ .Values.database.name | quote }}
+  
+  # Server configuration
+  SERVER_PORT: {{ .Values.server.port | quote }}
+  SSE_ENABLED: {{ .Values.server.sseEnabled | quote }}
+  
+  # Logging configuration
+  LOG_LEVEL: {{ .Values.logging.level | quote }}
+  ENVIRONMENT: {{ .Values.logging.environment | quote }}
+  
+  # OpenStack Domain (non-sensitive)
+  OPENSTACK_DOMAIN_NAME: {{ .Values.openstack.domainName | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "network-collector.fullname" . }}-frontend-config
+  labels:
+    {{- include "network-collector.labels" . | nindent 4 }}
+data:
+  REACT_APP_API_URL: {{ printf "http://%s-api:%d/api/v1" (include "network-collector.fullname" .) (.Values.api.service.port | int) | quote }}
+

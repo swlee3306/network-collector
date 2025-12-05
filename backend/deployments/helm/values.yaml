@@ -1,0 +1,130 @@
+# Default values for network-collector
+# This is a YAML-formatted file.
+
+# Global settings
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+
+# Collector configuration
+collector:
+  enabled: true
+  image:
+    repository: network-collector
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+# API Service configuration
+api:
+  enabled: true
+  image:
+    repository: network-collector-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 2
+  service:
+    type: ClusterIP
+    port: 8080
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+# Frontend configuration
+frontend:
+  enabled: true
+  image:
+    repository: network-collector-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 2
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "50m"
+    limits:
+      memory: "512Mi"
+      cpu: "200m"
+
+# MariaDB configuration
+mariadb:
+  enabled: true
+  image:
+    repository: mariadb
+    tag: "10.11"
+    pullPolicy: IfNotPresent
+  storage:
+    size: 20Gi
+    storageClass: standard
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+# Database configuration
+database:
+  host: mariadb
+  port: 3306
+  user: openstack_monitor
+  name: openstack_monitor
+
+# Server configuration
+server:
+  port: 8080
+  sseEnabled: true
+
+# Logging configuration
+logging:
+  level: info
+  environment: production
+
+# OpenStack configuration (values should be set via secrets)
+openstack:
+  domainName: default
+
+# Authentication configuration (values should be set via secrets)
+auth:
+  jwtSecret: ""  # Set via secret
+  token: ""      # Set via secret
+
+# Ingress configuration
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: network-collector.local
+      paths:
+        - path: /
+          pathType: Prefix
+        - path: /api
+          pathType: Prefix
+  tls: []
+
+# Secrets (should be set via --set or secret management)
+secrets:
+  dbPassword: ""           # Set via --set secrets.dbPassword
+  openstackAuthURL: ""     # Set via --set secrets.openstackAuthURL
+  openstackUsername: ""  # Set via --set secrets.openstackUsername
+  openstackPassword: ""    # Set via --set secrets.openstackPassword
+  openstackProjectID: ""   # Set via --set secrets.openstackProjectID
+  jwtSecret: ""            # Set via --set secrets.jwtSecret
+  authToken: ""            # Set via --set secrets.authToken
+
