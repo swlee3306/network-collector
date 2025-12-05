@@ -65,13 +65,32 @@ func (b *Broadcaster) Unsubscribe(ch chan Event) {
 // Broadcast sends an event to all subscribed clients
 func (b *Broadcaster) Broadcast(event Event) {
 	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	event.Timestamp = time.Now().Format(time.RFC3339)
-
+	// Create a copy of clients map to avoid holding lock during send
+	clients := make([]chan Event, 0, len(b.clients))
 	for ch := range b.clients {
+		clients = append(clients, ch)
+	}
+	b.mu.RUnlock()
+
+	// Set timestamp once before sending to all clients
+	timestamp := time.Now().Format(time.RFC3339)
+
+	// Send to all clients (without holding lock to avoid blocking)
+	for _, ch := range clients {
+		// Create a new event instance with timestamp for each client
+		// This prevents race conditions if event is modified concurrently
+		eventCopy := Event{
+			Type:      event.Type,
+			Timestamp: timestamp,
+			Data:      make(map[string]interface{}),
+		}
+		// Copy data map to avoid sharing mutable state
+		for k, v := range event.Data {
+			eventCopy.Data[k] = v
+		}
+
 		select {
-		case ch <- event:
+		case ch <- eventCopy:
 			// Event sent successfully
 		default:
 			// Channel is full, skip this client

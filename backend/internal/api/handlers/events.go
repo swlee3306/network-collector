@@ -77,7 +77,7 @@ func StreamEvents(repo *storage.Repository, broadcaster *events.Broadcaster) gin
 
 		// Use WaitGroup for proper goroutine coordination
 		var wg sync.WaitGroup
-		wg.Add(1)
+		wg.Add(2) // Both heartbeat and event streaming goroutines
 
 		// Heartbeat goroutine with proper cleanup
 		go func() {
@@ -115,6 +115,7 @@ func StreamEvents(repo *storage.Repository, broadcaster *events.Broadcaster) gin
 		// Stream events to client
 		done := make(chan struct{})
 		go func() {
+			defer wg.Done()
 			defer close(done)
 			for {
 				select {
@@ -153,7 +154,6 @@ func StreamEvents(repo *storage.Repository, broadcaster *events.Broadcaster) gin
 		case <-ctx.Done():
 			// Context cancelled, wait for goroutines to finish
 			wg.Wait()
-			<-done
 		case <-done:
 			// Event loop completed, wait for heartbeat goroutine
 			wg.Wait()

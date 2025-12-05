@@ -35,7 +35,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	defer database.Close()
 
 	// Run migrations
 	if err := migrations.RunMigrations(db); err != nil {
@@ -73,6 +72,11 @@ func main() {
 
 	if err := server.Stop(ctx); err != nil {
 		log.Printf("Error during server shutdown: %v", err)
+	}
+
+	// Close database connection after server shutdown
+	if err := database.Close(); err != nil {
+		log.Printf("Error closing database connection: %v", err)
 	}
 
 	log.Println("API Service shutdown complete")
