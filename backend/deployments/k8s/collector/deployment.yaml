@@ -18,7 +18,7 @@ spec:
       containers:
       - name: collector
         image: network-collector:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Never  # 로컬 이미지 사용 (프로덕션에서는 레지스트리 사용 권장)
         command: ["/app/collector"]
         env:
         # Database configuration

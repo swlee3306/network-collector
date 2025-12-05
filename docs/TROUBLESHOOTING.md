@@ -404,9 +404,62 @@ resources:
 - API 서비스의 데이터베이스 연결 수 확인
 - 필요시 연결 풀 크기 조정
 
+## ImagePullBackOff 오류
+
+### 증상
+
+```bash
+kubectl get pods
+NAME        READY   STATUS             RESTARTS   AGE
+network-collector-xxx   0/1     ImagePullBackOff   0          30s
+```
+
+### 원인
+
+Kubernetes가 컨테이너 이미지를 Pull할 수 없습니다. 일반적으로:
+- 이미지가 레지스트리에 없음
+- 이미지 이름에 레지스트리 경로가 없음
+- 레지스트리 접근 권한 없음
+
+### 해결 방법
+
+#### 1. 원격 서버에서 이미지 빌드
+
+```bash
+# 원격 서버에서
+cd /path/to/network-collector
+
+# 이미지 빌드
+cd backend
+docker build -t network-collector:latest -f Dockerfile.collector .
+docker build -t network-collector-api:latest -f Dockerfile.api .
+cd ../frontend
+docker build -t network-collector-frontend:latest -f Dockerfile .
+```
+
+#### 2. imagePullPolicy를 Never로 변경
+
+```bash
+# Deployment 수정
+kubectl patch deployment network-collector -p '{"spec":{"template":{"spec":{"containers":[{"name":"collector","imagePullPolicy":"Never"}]}}}}'
+kubectl patch deployment network-collector-api -p '{"spec":{"template":{"spec":{"containers":[{"name":"api","imagePullPolicy":"Never"}]}}}}'
+kubectl patch deployment network-collector-frontend -p '{"spec":{"template":{"spec":{"containers":[{"name":"frontend","imagePullPolicy":"Never"}]}}}}'
+```
+
+#### 3. Pod 재시작
+
+```bash
+kubectl rollout restart deployment/network-collector
+kubectl rollout restart deployment/network-collector-api
+kubectl rollout restart deployment/network-collector-frontend
+```
+
+자세한 내용은 [이미지 빌드 가이드](./IMAGE_BUILD.md)를 참조하세요.
+
 ## 추가 리소스
 
 - [배포 가이드](../DEPLOYMENT.md)
 - [빠른 시작 가이드](../specs/001-openstack-monitoring/quickstart.md)
 - [Secret 생성 가이드](./SECRETS.md)
+- [이미지 빌드 가이드](./IMAGE_BUILD.md)
 
