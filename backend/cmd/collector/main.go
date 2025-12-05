@@ -43,7 +43,6 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to connect to database", zap.Error(err))
 	}
-	defer database.Close()
 
 	// Run migrations
 	if err := migrations.RunMigrations(db); err != nil {
@@ -133,6 +132,11 @@ func main() {
 		log.Info("Cleanup service goroutine stopped")
 	case <-shutdownCtx.Done():
 		log.Warn("Cleanup service goroutine shutdown timeout")
+	}
+
+	// Close database connection after all goroutines have finished
+	if err := database.Close(); err != nil {
+		log.Warn("Error closing database connection", zap.Error(err))
 	}
 
 	log.Info("OpenStack Collector Service shutdown complete")

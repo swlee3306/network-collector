@@ -152,18 +152,20 @@ func splitCommaSeparated(s string) []string {
 	var current string
 	for _, char := range s {
 		if char == ',' {
-			if current != "" {
-				// Trim whitespace before adding
-				result = append(result, strings.TrimSpace(current))
-				current = ""
+			// Trim whitespace and only add if not empty after trimming
+			trimmed := strings.TrimSpace(current)
+			if trimmed != "" {
+				result = append(result, trimmed)
 			}
+			current = ""
 		} else {
 			current += string(char)
 		}
 	}
-	if current != "" {
-		// Trim whitespace before adding
-		result = append(result, strings.TrimSpace(current))
+	// Trim whitespace and only add if not empty after trimming
+	trimmed := strings.TrimSpace(current)
+	if trimmed != "" {
+		result = append(result, trimmed)
 	}
 	return result
 }
