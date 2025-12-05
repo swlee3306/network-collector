@@ -187,21 +187,9 @@ check_images() {
             return 1
         fi
         
-        # Kubernetes 컨테이너 런타임 확인 및 이미지 import
-        log_info "Kubernetes 컨테이너 런타임 확인 중..."
-        if command -v crictl &> /dev/null; then
-            log_info "containerd/cri-o 감지됨. 이미지를 컨테이너 런타임에 import합니다..."
-            for image in "${IMAGES[@]}"; do
-                # Docker 이미지를 containerd로 import
-                if command -v ctr &> /dev/null; then
-                    log_info "이미지 import 중: $image"
-                    docker save "$image" | ctr -n k8s.io images import - || {
-                        log_warn "ctr로 import 실패, crictl로 시도..."
-                        # crictl은 직접 import를 지원하지 않으므로 docker save/load 사용
-                    }
-                fi
-            done
-        fi
+        # containerd import는 권한 문제로 인해 자동 실행하지 않음
+        # 필요시 수동으로 './scripts/import-images-to-containerd.sh' 실행
+        # 또는 './scripts/deploy-images-to-nodes.sh'를 사용하여 모든 노드에 배포
     else
         log_warn "Docker가 설치되어 있지 않습니다. 이미지 확인을 건너뜁니다."
     fi
