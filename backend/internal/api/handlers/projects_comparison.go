@@ -58,17 +58,17 @@ func CompareProjects(repo *storage.Repository) gin.HandlerFunc {
 			instances, err := repo.GetInstancesByProjectID(projectID)
 			if err != nil {
 				log.Printf("Failed to get instances for project %s: %v", projectID, err)
-				instances = []*models.Instance{} // Use empty slice on error
+				instances = []models.Instance{} // Use empty slice on error
 			}
 			networks, err := repo.GetNetworksByProjectID(projectID)
 			if err != nil {
 				log.Printf("Failed to get networks for project %s: %v", projectID, err)
-				networks = []*models.Network{} // Use empty slice on error
+				networks = []models.Network{} // Use empty slice on error
 			}
 			volumes, err := repo.GetVolumesByProjectID(projectID)
 			if err != nil {
 				log.Printf("Failed to get volumes for project %s: %v", projectID, err)
-				volumes = []*models.Volume{} // Use empty slice on error
+				volumes = []models.Volume{} // Use empty slice on error
 			}
 
 			activeInstances := 0
@@ -110,17 +110,17 @@ func GetProjectResourceSummary(repo *storage.Repository) gin.HandlerFunc {
 		instances, err := repo.GetInstancesByProjectID(projectID)
 		if err != nil {
 			log.Printf("Failed to get instances for project %s: %v", projectID, err)
-			instances = []*models.Instance{} // Use empty slice on error
+			instances = []models.Instance{} // Use empty slice on error
 		}
 		networks, err := repo.GetNetworksByProjectID(projectID)
 		if err != nil {
 			log.Printf("Failed to get networks for project %s: %v", projectID, err)
-			networks = []*models.Network{} // Use empty slice on error
+			networks = []models.Network{} // Use empty slice on error
 		}
 		volumes, err := repo.GetVolumesByProjectID(projectID)
 		if err != nil {
 			log.Printf("Failed to get volumes for project %s: %v", projectID, err)
-			volumes = []*models.Volume{} // Use empty slice on error
+			volumes = []models.Volume{} // Use empty slice on error
 		}
 
 		activeInstances := 0
