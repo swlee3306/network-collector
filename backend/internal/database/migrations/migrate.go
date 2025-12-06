@@ -58,16 +58,39 @@ func ensureColumnTypes(db *gorm.DB) error {
 
 			if err == nil && columnType != "varchar(255)" {
 				log.Println("Ensuring instances.hypervisor_id is VARCHAR(255)...")
-				// Use raw SQL to modify column type, ignoring data truncation
-				// This will set long values to NULL if needed
+				
+				// First, find and drop the foreign key constraint if it exists
+				var fkName string
+				err = db.Raw(`
+					SELECT CONSTRAINT_NAME
+					FROM information_schema.KEY_COLUMN_USAGE
+					WHERE TABLE_SCHEMA = DATABASE()
+					AND TABLE_NAME = 'instances'
+					AND COLUMN_NAME = 'hypervisor_id'
+					AND REFERENCED_TABLE_NAME IS NOT NULL
+					LIMIT 1
+				`).Scan(&fkName).Error
+				
+				if err == nil && fkName != "" {
+					log.Printf("Dropping foreign key constraint: %s", fkName)
+					if err := db.Exec(`
+						SET FOREIGN_KEY_CHECKS = 0;
+						ALTER TABLE instances DROP FOREIGN KEY ` + fkName + `;
+						SET FOREIGN_KEY_CHECKS = 1;
+					`).Error; err != nil {
+						log.Printf("Warning: Failed to drop foreign key constraint: %v", err)
+					}
+				}
+				
+				// Set empty strings to NULL and truncate long values
 				if err := db.Exec(`
 					UPDATE instances 
 					SET hypervisor_id = NULL 
-					WHERE hypervisor_id IS NOT NULL 
-					AND LENGTH(hypervisor_id) > 255
+					WHERE (hypervisor_id = '' OR hypervisor_id IS NOT NULL AND LENGTH(hypervisor_id) > 255)
 				`).Error; err != nil {
-					log.Printf("Warning: Failed to truncate long hypervisor_id values: %v", err)
+					log.Printf("Warning: Failed to fix hypervisor_id values: %v", err)
 				}
+				
 				// Now modify the column type
 				if err := db.Exec(`
 					ALTER TABLE instances 

@@ -20,9 +20,9 @@ type Instance struct {
 	CollectedAt  time.Time `gorm:"index" json:"collected_at"`
 
 	// Relationships
-	Project    Project    `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
-	Flavor     Flavor     `gorm:"foreignKey:FlavorID" json:"flavor,omitempty"`
-	Hypervisor Hypervisor `gorm:"foreignKey:HypervisorID" json:"hypervisor,omitempty"`
+	Project    Project           `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
+	Flavor     Flavor            `gorm:"foreignKey:FlavorID" json:"flavor,omitempty"`
+	Hypervisor Hypervisor        `gorm:"foreignKey:HypervisorID" json:"hypervisor,omitempty"`
 	Metrics    []InstanceMetrics `gorm:"foreignKey:InstanceID" json:"metrics,omitempty"`
 }
 
@@ -38,4 +38,3 @@ func (i *Instance) BeforeCreate(tx *gorm.DB) error {
 	}
 	return nil
 }
-

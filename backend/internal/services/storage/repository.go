@@ -1,9 +1,11 @@
 package storage
 
 import (
+	"fmt"
 	"log"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/network-collector/backend/internal/models"
 	"gorm.io/gorm"
 )
@@ -23,15 +25,61 @@ func NewRepository(db *gorm.DB) *Repository {
 // UpsertInstance creates or updates an instance
 func (r *Repository) UpsertInstance(instance *models.Instance) error {
 	instance.CollectedAt = time.Now()
+	
+	// Convert empty strings to NULL for foreign key fields to avoid constraint violations
+	// GORM doesn't automatically convert empty strings to NULL, so we need to handle this
+	// by using raw SQL for fields that are empty strings
+	hypervisorIDValue := instance.HypervisorID
+	if hypervisorIDValue == "" {
+		hypervisorIDValue = "NULL"
+	} else {
+		hypervisorIDValue = fmt.Sprintf("'%s'", hypervisorIDValue)
+	}
+	
 	// Check if instance exists by open_stack_id
 	existing, err := r.GetInstanceByOpenStackID(instance.OpenStackID)
 	if err == nil && existing != nil {
 		// Update existing instance
 		instance.ID = existing.ID
-		return r.db.Save(instance).Error
+		// Use Updates to handle NULL values properly
+		updateData := map[string]interface{}{
+			"name":         instance.Name,
+			"status":       instance.Status,
+			"project_id":   instance.ProjectID,
+			"flavor_id":    instance.FlavorID,
+			"updated_at":   instance.UpdatedAt,
+			"collected_at": instance.CollectedAt,
+		}
+		// Set hypervisor_id to NULL if empty, otherwise set the value
+		if instance.HypervisorID == "" {
+			updateData["hypervisor_id"] = nil
+		} else {
+			updateData["hypervisor_id"] = instance.HypervisorID
+		}
+		return r.db.Model(instance).Updates(updateData).Error
 	}
-	// Create new instance
-	return r.db.Create(instance).Error
+	// Create new instance - use Updates for NULL handling
+	if instance.ID == "" {
+		instance.ID = uuid.New().String()
+	}
+	createData := map[string]interface{}{
+		"id":           instance.ID,
+		"open_stack_id": instance.OpenStackID,
+		"name":         instance.Name,
+		"status":       instance.Status,
+		"project_id":   instance.ProjectID,
+		"flavor_id":    instance.FlavorID,
+		"created_at":   instance.CreatedAt,
+		"updated_at":   instance.UpdatedAt,
+		"collected_at": instance.CollectedAt,
+	}
+	// Set hypervisor_id to NULL if empty, otherwise set the value
+	if instance.HypervisorID == "" {
+		createData["hypervisor_id"] = nil
+	} else {
+		createData["hypervisor_id"] = instance.HypervisorID
+	}
+	return r.db.Model(instance).Create(createData).Error
 }
 
 // GetInstanceByOpenStackID gets an instance by OpenStack ID
