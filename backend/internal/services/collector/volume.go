@@ -41,7 +41,13 @@ func (c *VolumeCollector) CollectVolumes() error {
 		successCount++
 	}
 
-	if len(errors) == len(openstackVolumes) {
+	// If no volumes exist, that's not an error - just return success
+	if len(openstackVolumes) == 0 {
+		return nil
+	}
+
+	// Only report failure if we had volumes but all failed
+	if len(errors) == len(openstackVolumes) && len(openstackVolumes) > 0 {
 		return fmt.Errorf("all volumes failed to collect: %d errors", len(errors))
 	}
 
