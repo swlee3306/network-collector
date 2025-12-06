@@ -205,6 +205,14 @@ test_database() {
         else
             test_warn "instances.hypervisor_id: VARCHAR($HYPERVISOR_ID_LEN) (예상: 255)"
         fi
+    elif [ "$HYPERVISOR_ID_TYPE" = "char" ]; then
+        HYPERVISOR_ID_LEN=$(kubectl exec $DB_POD -- mysql -u openstack_monitor -proot -N -e "
+            SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS 
+            WHERE TABLE_SCHEMA = 'openstack_monitor' 
+            AND TABLE_NAME = 'instances' 
+            AND COLUMN_NAME = 'hypervisor_id';
+        " openstack_monitor 2>/dev/null || echo "")
+        test_fail "instances.hypervisor_id: CHAR($HYPERVISOR_ID_LEN) - DB 스키마 수정 필요! (./fix-db-schema.sh 실행)"
     else
         test_warn "instances.hypervisor_id 타입: $HYPERVISOR_ID_TYPE (예상: varchar)"
     fi
@@ -256,7 +264,16 @@ test_api_endpoints() {
     
     # Health check
     log_test "Health Check"
-    HEALTH_RESPONSE=$(kubectl exec $API_POD -- wget -qO- http://localhost:8080/health 2>/dev/null || echo "")
+    # wget 또는 curl 사용
+    HEALTH_RESPONSE=$(kubectl exec $API_POD -- sh -c "
+        if command -v wget >/dev/null 2>&1; then
+            wget -qO- http://localhost:8080/health 2>/dev/null
+        elif command -v curl >/dev/null 2>&1; then
+            curl -s http://localhost:8080/health 2>/dev/null
+        else
+            echo 'FAIL'
+        fi
+    " 2>/dev/null || echo "")
     if echo "$HEALTH_RESPONSE" | grep -q "ok\|healthy"; then
         test_pass "Health Check: OK"
     else
@@ -271,9 +288,17 @@ test_api_endpoints() {
         TOKEN=""
     else
         LOGIN_RESPONSE=$(kubectl exec $API_POD -- sh -c "
-            wget -qO- --post-data='{\"token\":\"$AUTH_TOKEN\"}' \
-            --header='Content-Type: application/json' \
-            http://localhost:8080/api/v1/auth/login 2>/dev/null || echo 'FAIL'
+            if command -v curl >/dev/null 2>&1; then
+                curl -s -X POST -H 'Content-Type: application/json' \
+                -d '{\"token\":\"$AUTH_TOKEN\"}' \
+                http://localhost:8080/api/v1/auth/login 2>/dev/null
+            elif command -v wget >/dev/null 2>&1; then
+                wget -qO- --post-data='{\"token\":\"$AUTH_TOKEN\"}' \
+                --header='Content-Type: application/json' \
+                http://localhost:8080/api/v1/auth/login 2>/dev/null
+            else
+                echo 'FAIL'
+            fi
         " 2>/dev/null || echo "FAIL")
         
         if echo "$LOGIN_RESPONSE" | grep -q "token\|success"; then
@@ -308,8 +333,15 @@ test_api_endpoints() {
         fi
         
         RESPONSE=$(kubectl exec $API_POD -- sh -c "
-            wget -qO- --header='Authorization: Bearer $TOKEN' \
-            http://localhost:8080$endpoint 2>/dev/null || echo 'FAIL'
+            if command -v curl >/dev/null 2>&1; then
+                curl -s -H 'Authorization: Bearer $TOKEN' \
+                http://localhost:8080$endpoint 2>/dev/null
+            elif command -v wget >/dev/null 2>&1; then
+                wget -qO- --header='Authorization: Bearer $TOKEN' \
+                http://localhost:8080$endpoint 2>/dev/null
+            else
+                echo 'FAIL'
+            fi
         " 2>/dev/null || echo "FAIL")
         
         if echo "$RESPONSE" | grep -q "\[\]\|{"; then
@@ -393,11 +425,19 @@ test_frontend() {
     fi
     
     log_test "Frontend HTTP 응답"
-    RESPONSE=$(kubectl exec $FRONTEND_POD -- wget -qO- http://localhost/ 2>/dev/null || echo "")
-    if echo "$RESPONSE" | grep -q "React App\|root"; then
+    RESPONSE=$(kubectl exec $FRONTEND_POD -- sh -c "
+        if command -v wget >/dev/null 2>&1; then
+            wget -qO- http://localhost/ 2>/dev/null
+        elif command -v curl >/dev/null 2>&1; then
+            curl -s http://localhost/ 2>/dev/null
+        else
+            cat /usr/share/nginx/html/index.html 2>/dev/null || echo ''
+        fi
+    " 2>/dev/null || echo "")
+    if echo "$RESPONSE" | grep -q "React App\|root\|<!doctype html"; then
         test_pass "Frontend HTML 응답 확인"
     else
-        test_fail "Frontend HTML 응답 실패"
+        test_fail "Frontend HTML 응답 실패 (응답 길이: ${#RESPONSE})"
     fi
     
     log_test "Nginx 설정 확인"
@@ -453,6 +493,42 @@ print_summary() {
     echo -e "총 테스트: $TOTAL"
     echo ""
     
+    # 주요 문제 해결 방법 제시
+    if [ $FAILED -gt 0 ] || [ $WARNINGS -gt 0 ]; then
+        echo -e "${CYAN}=== 해결 방법 ===${NC}"
+        
+        # DB 스키마 문제 확인
+        HYPERVISOR_TYPE=$(kubectl exec $(kubectl get pods -l app=mariadb -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) -- mysql -u openstack_monitor -proot -N -e "
+            SELECT DATA_TYPE FROM information_schema.COLUMNS 
+            WHERE TABLE_SCHEMA = 'openstack_monitor' 
+            AND TABLE_NAME = 'instances' 
+            AND COLUMN_NAME = 'hypervisor_id';
+        " openstack_monitor 2>/dev/null || echo "")
+        
+        if [ "$HYPERVISOR_TYPE" = "char" ]; then
+            echo -e "${YELLOW}1. DB 스키마 수정 필요:${NC}"
+            echo -e "   ./scripts/fix-db-schema.sh"
+            echo ""
+        fi
+        
+        # Instances가 0개인 경우
+        INSTANCE_COUNT=$(kubectl exec $(kubectl get pods -l app=mariadb -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) -- mysql -u openstack_monitor -proot -N -e "
+            SELECT COUNT(*) FROM instances;
+        " openstack_monitor 2>/dev/null || echo "0")
+        
+        if [ "$INSTANCE_COUNT" = "0" ]; then
+            echo -e "${YELLOW}2. 데이터 수집 문제:${NC}"
+            echo -e "   - Collector 로그 확인: kubectl logs -f deployment/network-collector"
+            echo -e "   - DB 스키마 수정 후 Collector 재시작: kubectl rollout restart deployment/network-collector"
+            echo ""
+        fi
+        
+        echo -e "${YELLOW}3. 이미지 재빌드 및 배포:${NC}"
+        echo -e "   ./scripts/build-images.sh"
+        echo -e "   ./scripts/deploy-images-to-nodes.sh"
+        echo ""
+    fi
+    
     if [ $FAILED -eq 0 ]; then
         if [ $WARNINGS -eq 0 ]; then
             echo -e "${GREEN}✓ 모든 테스트 통과!${NC}"
@@ -462,7 +538,7 @@ print_summary() {
             return 0
         fi
     else
-        echo -e "${RED}✗ 일부 테스트 실패. 위의 에러를 확인하세요.${NC}"
+        echo -e "${RED}✗ 일부 테스트 실패. 위의 해결 방법을 참고하세요.${NC}"
         return 1
     fi
 }
