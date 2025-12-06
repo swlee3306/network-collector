@@ -139,25 +139,27 @@ func (c *NetworkCollector) savePort(port ports.Port) error {
 		}
 	}
 
-	// Convert OpenStack DeviceID (instance OpenStack ID) to internal Instance ID
-	// Port.DeviceID should store the internal database Instance ID for foreign key relationship
-	var deviceID string
+	// Convert OpenStack DeviceID to internal database ID
+	// For instances: convert to internal Instance ID
+	// For routers and other devices: store as NULL (no foreign key relationship)
+	var deviceID *string
 	if port.DeviceID != "" && port.DeviceOwner != "" {
 		// Only convert if device owner indicates it's an instance (compute:nova)
 		if port.DeviceOwner == "compute:nova" || port.DeviceOwner == "compute:None" {
 			instance, err := c.repository.GetInstanceByOpenStackID(port.DeviceID)
 			if err == nil {
-				deviceID = instance.ID
+				// Found instance - use internal ID
+				id := instance.ID
+				deviceID = &id
 			} else {
-				// Instance not found - leave empty to maintain foreign key integrity
+				// Instance not found - set to NULL
 				// The port can be updated later when the instance is collected
-				// Storing OpenStack ID here would break the foreign key relationship
-				deviceID = ""
+				deviceID = nil
 			}
 		} else {
-			// For non-instance devices (routers, etc.), store OpenStack ID directly
-			// These don't have foreign key relationships to Instance
-			deviceID = port.DeviceID
+			// For non-instance devices (routers, etc.), set to NULL
+			// These don't have foreign key relationships
+			deviceID = nil
 		}
 	}
 

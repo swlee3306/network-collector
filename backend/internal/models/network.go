@@ -71,7 +71,7 @@ type Port struct {
 	ID          string    `gorm:"type:char(36);primaryKey" json:"id"`
 	OpenStackID string    `gorm:"type:varchar(255);uniqueIndex;not null" json:"openstack_id"`
 	NetworkID   string    `gorm:"type:char(36);index;not null" json:"network_id"`
-	DeviceID    string    `gorm:"type:varchar(255);index" json:"device_id"`
+	DeviceID    *string   `gorm:"type:varchar(255);index" json:"device_id"` // Nullable - can be instance ID or router ID
 	DeviceOwner string    `gorm:"type:varchar(100)" json:"device_owner"`
 	MACAddress  string    `gorm:"type:varchar(17)" json:"mac_address"`
 	Status      string    `gorm:"type:varchar(50)" json:"status"`
@@ -81,7 +81,7 @@ type Port struct {
 
 	// Relationships
 	Network Network `gorm:"foreignKey:NetworkID" json:"network,omitempty"`
-	Instance *Instance `gorm:"foreignKey:DeviceID" json:"instance,omitempty"`
+	// Note: DeviceID can reference either Instance or Router, so no foreign key constraint
 }
 
 // TableName specifies the table name
