@@ -131,9 +131,10 @@ func (a *Analyzer) tracePathFromPort(port *models.Port, sourceNode *models.Topol
 	}
 
 	// Also try to find direct path to hypervisor (for internal networks)
-	// port.DeviceID contains OpenStack instance ID, need to find instance
-	if port.DeviceID != "" {
-		instance, err := a.repository.GetInstanceByOpenStackID(port.DeviceID)
+	// port.DeviceID contains internal instance ID (if it's an instance port)
+	if port.DeviceID != nil && *port.DeviceID != "" {
+		// DeviceID is now internal instance ID, not OpenStack ID
+		instance, err := a.repository.GetInstanceByID(*port.DeviceID)
 		if err == nil && instance.HypervisorID != "" {
 			hypervisor, err := a.repository.GetHypervisorByID(instance.HypervisorID)
 			if err == nil {
