@@ -37,10 +37,27 @@ log_info "DB Pod: $DB_POD"
 # 마이그레이션 SQL 실행
 log_info "Port 테이블의 device_id 컬럼 수정 중..."
 
-kubectl exec -i $DB_POD -- mysql -u openstack_monitor -proot openstack_monitor <<EOF
--- Drop foreign key constraint if exists
-SET @constraint_name = (SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = 'openstack_monitor' AND TABLE_NAME = 'ports' AND CONSTRAINT_TYPE = 'FOREIGN KEY' AND CONSTRAINT_NAME LIKE '%device_id%' LIMIT 1);
-SET @sql = IF(@constraint_name IS NOT NULL, CONCAT('ALTER TABLE ports DROP FOREIGN KEY ', @constraint_name), 'SELECT "No foreign key constraint found"');
+kubectl exec -i $DB_POD -- mysql -u openstack_monitor -proot openstack_monitor <<'EOF'
+-- Disable foreign key checks temporarily
+SET FOREIGN_KEY_CHECKS = 0;
+
+-- Drop foreign key constraint if it exists
+-- First, check if the constraint exists and get its name
+SET @constraint_name = (
+    SELECT CONSTRAINT_NAME 
+    FROM information_schema.TABLE_CONSTRAINTS 
+    WHERE TABLE_SCHEMA = 'openstack_monitor' 
+    AND TABLE_NAME = 'ports' 
+    AND CONSTRAINT_TYPE = 'FOREIGN KEY' 
+    AND CONSTRAINT_NAME = 'fk_ports_instance'
+    LIMIT 1
+);
+
+-- Drop the constraint if it exists
+SET @sql = IF(@constraint_name IS NOT NULL, 
+    CONCAT('ALTER TABLE ports DROP FOREIGN KEY ', @constraint_name), 
+    'SELECT "Foreign key constraint fk_ports_instance does not exist" AS message'
+);
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
@@ -50,6 +67,9 @@ ALTER TABLE ports MODIFY COLUMN device_id VARCHAR(255) NULL;
 
 -- Also fix hypervisor_id in instances table
 ALTER TABLE instances MODIFY COLUMN hypervisor_id VARCHAR(255) NULL;
+
+-- Re-enable foreign key checks
+SET FOREIGN_KEY_CHECKS = 1;
 
 SELECT 'Schema update completed successfully' AS result;
 EOF
