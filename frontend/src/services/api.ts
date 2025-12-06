@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080/api/v1';
+// API Base URL: 환경 변수에서 가져오거나 상대 경로 사용
+// 상대 경로를 사용하면 Ingress를 통해 자동으로 라우팅됨
+const API_BASE_URL = process.env.REACT_APP_API_URL || '/api/v1';
 
 // Create axios instance
 const apiClient = axios.create({
@@ -122,9 +124,13 @@ export const eventsAPI = {
     // Note: EventSource doesn't support custom headers, so we'll need to pass token as query param
     // or use a different approach
     const token = localStorage.getItem('auth_token');
+    // 상대 경로 사용: 현재 호스트를 기준으로 자동으로 경로 생성
+    const baseUrl = API_BASE_URL.startsWith('http') 
+      ? API_BASE_URL 
+      : `${window.location.origin}${API_BASE_URL}`;
     const url = token 
-      ? `${API_BASE_URL}/events/stream?token=${token}`
-      : `${API_BASE_URL}/events/stream`;
+      ? `${baseUrl}/events/stream?token=${token}`
+      : `${baseUrl}/events/stream`;
     return new EventSource(url, {
       withCredentials: false,
     } as any);

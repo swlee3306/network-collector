@@ -28,5 +28,7 @@ metadata:
   name: network-collector-frontend-config
   namespace: default
 data:
-  REACT_APP_API_URL: "http://network-collector-api:8080/api/v1"
+  # 상대 경로 사용: Ingress를 통해 자동으로 라우팅됨
+  # 외부 접속 시에도 동일한 호스트/포트를 사용하므로 문제없음
+  REACT_APP_API_URL: "/api/v1"
 
