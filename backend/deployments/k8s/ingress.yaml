@@ -4,9 +4,29 @@ metadata:
   name: network-collector-ingress
   namespace: default
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
+    # rewrite-target은 필요 없음 (루트 경로이므로)
+    # nginx.ingress.kubernetes.io/rewrite-target: /
 spec:
+  ingressClassName: nginx  # 이 줄 추가 (또는 kubectl get ingressclass로 확인한 이름)
   rules:
+  # host를 지정하지 않으면 모든 호스트에서 접근 가능
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: network-collector-frontend
+            port:
+              number: 80
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: network-collector-api
+            port:
+              number: 8080
+  # network-collector.local 호스트도 지원 (선택사항)
   - host: network-collector.local
     http:
       paths:
