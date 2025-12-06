@@ -173,21 +173,48 @@ for node in "${NODES[@]}"; do
             fi
         "
     else
-        # 로컬 노드
-        if [ "$node" != "localhost" ] && [ "$node" != "$(hostname)" ]; then
-            log_warn "로컬 노드로 인식되지만 호스트명이 다릅니다: $node"
-        fi
+        # 호스트명만 있는 경우
+        # 실제로는 원격 노드일 수 있으므로 SSH로 접속 시도
+        CURRENT_USER=${SUDO_USER:-$USER}
+        NODE_FULL="${CURRENT_USER}@${node}"
         
-        # 이미 이미 로드되어 있음 (빌드 노드)
-        if [ "$node" != "$BUILD_NODE" ]; then
-            if command -v docker &> /dev/null; then
-                docker load -i "$IMAGE_TAR"
-            elif command -v ctr &> /dev/null; then
-                ctr -n k8s.io images import "$IMAGE_TAR"
-            else
-                log_error "Docker 또는 containerd를 찾을 수 없습니다."
-                exit 1
+        # 로컬 노드인지 확인
+        if [ "$node" == "localhost" ] || [ "$node" == "$(hostname)" ]; then
+            # 실제 로컬 노드
+            if [ "$node" != "$BUILD_NODE" ]; then
+                if command -v docker &> /dev/null; then
+                    docker load -i "$IMAGE_TAR"
+                elif command -v ctr &> /dev/null; then
+                    ctr -n k8s.io images import "$IMAGE_TAR"
+                else
+                    log_error "Docker 또는 containerd를 찾을 수 없습니다."
+                    exit 1
+                fi
             fi
+        else
+            # 원격 노드로 간주하고 SSH로 접속
+            log_info "원격 노드로 접속: $NODE_FULL"
+            
+            # 이미지 tar 복사
+            scp $SSH_OPTS "$IMAGE_TAR" "$NODE_FULL:/tmp/" || {
+                log_error "이미지 tar 복사 실패: $NODE_FULL"
+                exit 1
+            }
+            
+            # 이미지 로드
+            ssh $SSH_OPTS "$NODE_FULL" "
+                if command -v docker &> /dev/null; then
+                    docker load -i /tmp/network-collector-images.tar && rm /tmp/network-collector-images.tar
+                elif command -v ctr &> /dev/null; then
+                    ctr -n k8s.io images import /tmp/network-collector-images.tar && rm /tmp/network-collector-images.tar
+                else
+                    echo 'ERROR: Docker 또는 containerd를 찾을 수 없습니다.'
+                    exit 1
+                fi
+            " || {
+                log_error "SSH 접속 또는 이미지 로드 실패: $NODE_FULL"
+                exit 1
+            }
         fi
     fi
     
