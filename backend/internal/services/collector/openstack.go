@@ -56,6 +56,15 @@ func NewOpenStackCollector(cfg *config.Config, repository *storage.Repository) (
 }
 
 // CollectAll collects all basic resources (instances, networks, hypervisors)
+// Collection order is important for foreign key relationships:
+// 1. Projects (no dependencies)
+// 2. Flavors (no dependencies)
+// 3. Hypervisors (no dependencies)
+// 4. Instances (depends on Projects, Flavors, Hypervisors)
+// 5. Networks (depends on Projects)
+// 6. Ports (depends on Networks, Instances)
+// 7. Routers (no dependencies)
+// 8. Volumes (depends on Projects, Instances)
 func (c *OpenStackCollector) CollectAll() error {
 	log.Println("Starting OpenStack resource collection...")
 	startTime := time.Now()
@@ -63,77 +72,7 @@ func (c *OpenStackCollector) CollectAll() error {
 	var errors []error
 	partialFailures := 0
 
-	// Collect instances
-	log.Println("Collecting instances...")
-	instanceStart := time.Now()
-	if err := c.instanceCollector.CollectInstances(); err != nil {
-		log.Printf("Instance collection error: %v", err)
-		errors = append(errors, fmt.Errorf("instances: %w", err))
-		partialFailures++
-		metrics.RecordCollection("instances", false, time.Since(instanceStart).Seconds())
-		metrics.RecordCollectionError("instances", "collection_failed")
-	} else {
-		log.Println("Instances collected successfully")
-		metrics.RecordCollection("instances", true, time.Since(instanceStart).Seconds())
-	}
-
-	// Collect networks
-	log.Println("Collecting networks...")
-	networkStart := time.Now()
-	if err := c.networkCollector.CollectNetworks(); err != nil {
-		log.Printf("Network collection error: %v", err)
-		errors = append(errors, fmt.Errorf("networks: %w", err))
-		partialFailures++
-		metrics.RecordCollection("networks", false, time.Since(networkStart).Seconds())
-		metrics.RecordCollectionError("networks", "collection_failed")
-	} else {
-		log.Println("Networks collected successfully")
-		metrics.RecordCollection("networks", true, time.Since(networkStart).Seconds())
-	}
-
-	// Collect ports
-	log.Println("Collecting ports...")
-	portStart := time.Now()
-	if err := c.networkCollector.CollectPorts(); err != nil {
-		log.Printf("Port collection error: %v", err)
-		errors = append(errors, fmt.Errorf("ports: %w", err))
-		partialFailures++
-		metrics.RecordCollection("ports", false, time.Since(portStart).Seconds())
-		metrics.RecordCollectionError("ports", "collection_failed")
-	} else {
-		log.Println("Ports collected successfully")
-		metrics.RecordCollection("ports", true, time.Since(portStart).Seconds())
-	}
-
-	// Collect routers
-	log.Println("Collecting routers...")
-	routerStart := time.Now()
-	if err := c.networkCollector.CollectRouters(); err != nil {
-		log.Printf("Router collection error: %v", err)
-		errors = append(errors, fmt.Errorf("routers: %w", err))
-		partialFailures++
-		metrics.RecordCollection("routers", false, time.Since(routerStart).Seconds())
-		metrics.RecordCollectionError("routers", "collection_failed")
-	} else {
-		log.Println("Routers collected successfully")
-		metrics.RecordCollection("routers", true, time.Since(routerStart).Seconds())
-	}
-
-	// Collect hypervisors
-	log.Println("Collecting hypervisors...")
-	hypervisorStart := time.Now()
-	if err := c.hypervisorCollector.CollectHypervisors(); err != nil {
-		log.Printf("Hypervisor collection error: %v", err)
-		errors = append(errors, fmt.Errorf("hypervisors: %w", err))
-		partialFailures++
-		metrics.RecordCollection("hypervisors", false, time.Since(hypervisorStart).Seconds())
-		metrics.RecordCollectionError("hypervisors", "collection_failed")
-	} else {
-		log.Println("Hypervisors collected successfully")
-		metrics.RecordCollection("hypervisors", true, time.Since(hypervisorStart).Seconds())
-	}
-
-	// Collect projects
+	// 1. Collect projects first (no dependencies)
 	log.Println("Collecting projects...")
 	projectStart := time.Now()
 	if err := c.projectCollector.CollectProjects(); err != nil {
@@ -147,7 +86,7 @@ func (c *OpenStackCollector) CollectAll() error {
 		metrics.RecordCollection("projects", true, time.Since(projectStart).Seconds())
 	}
 
-	// Collect flavors
+	// 2. Collect flavors (no dependencies, needed by instances)
 	log.Println("Collecting flavors...")
 	flavorStart := time.Now()
 	if err := c.flavorCollector.CollectFlavors(); err != nil {
@@ -159,6 +98,76 @@ func (c *OpenStackCollector) CollectAll() error {
 	} else {
 		log.Println("Flavors collected successfully")
 		metrics.RecordCollection("flavors", true, time.Since(flavorStart).Seconds())
+	}
+
+	// 3. Collect hypervisors (no dependencies, needed by instances)
+	log.Println("Collecting hypervisors...")
+	hypervisorStart := time.Now()
+	if err := c.hypervisorCollector.CollectHypervisors(); err != nil {
+		log.Printf("Hypervisor collection error: %v", err)
+		errors = append(errors, fmt.Errorf("hypervisors: %w", err))
+		partialFailures++
+		metrics.RecordCollection("hypervisors", false, time.Since(hypervisorStart).Seconds())
+		metrics.RecordCollectionError("hypervisors", "collection_failed")
+	} else {
+		log.Println("Hypervisors collected successfully")
+		metrics.RecordCollection("hypervisors", true, time.Since(hypervisorStart).Seconds())
+	}
+
+	// 4. Collect instances (depends on projects, flavors, hypervisors)
+	log.Println("Collecting instances...")
+	instanceStart := time.Now()
+	if err := c.instanceCollector.CollectInstances(); err != nil {
+		log.Printf("Instance collection error: %v", err)
+		errors = append(errors, fmt.Errorf("instances: %w", err))
+		partialFailures++
+		metrics.RecordCollection("instances", false, time.Since(instanceStart).Seconds())
+		metrics.RecordCollectionError("instances", "collection_failed")
+	} else {
+		log.Println("Instances collected successfully")
+		metrics.RecordCollection("instances", true, time.Since(instanceStart).Seconds())
+	}
+
+	// 5. Collect networks (depends on projects)
+	log.Println("Collecting networks...")
+	networkStart := time.Now()
+	if err := c.networkCollector.CollectNetworks(); err != nil {
+		log.Printf("Network collection error: %v", err)
+		errors = append(errors, fmt.Errorf("networks: %w", err))
+		partialFailures++
+		metrics.RecordCollection("networks", false, time.Since(networkStart).Seconds())
+		metrics.RecordCollectionError("networks", "collection_failed")
+	} else {
+		log.Println("Networks collected successfully")
+		metrics.RecordCollection("networks", true, time.Since(networkStart).Seconds())
+	}
+
+	// 6. Collect ports (depends on networks, instances)
+	log.Println("Collecting ports...")
+	portStart := time.Now()
+	if err := c.networkCollector.CollectPorts(); err != nil {
+		log.Printf("Port collection error: %v", err)
+		errors = append(errors, fmt.Errorf("ports: %w", err))
+		partialFailures++
+		metrics.RecordCollection("ports", false, time.Since(portStart).Seconds())
+		metrics.RecordCollectionError("ports", "collection_failed")
+	} else {
+		log.Println("Ports collected successfully")
+		metrics.RecordCollection("ports", true, time.Since(portStart).Seconds())
+	}
+
+	// 7. Collect routers (no dependencies)
+	log.Println("Collecting routers...")
+	routerStart := time.Now()
+	if err := c.networkCollector.CollectRouters(); err != nil {
+		log.Printf("Router collection error: %v", err)
+		errors = append(errors, fmt.Errorf("routers: %w", err))
+		partialFailures++
+		metrics.RecordCollection("routers", false, time.Since(routerStart).Seconds())
+		metrics.RecordCollectionError("routers", "collection_failed")
+	} else {
+		log.Println("Routers collected successfully")
+		metrics.RecordCollection("routers", true, time.Since(routerStart).Seconds())
 	}
 
 	// Collect volumes

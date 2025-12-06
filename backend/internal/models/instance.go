@@ -14,7 +14,7 @@ type Instance struct {
 	Status       string    `gorm:"type:varchar(50);not null" json:"status"`
 	ProjectID    string    `gorm:"type:char(36);index" json:"project_id"`
 	FlavorID     string    `gorm:"type:char(36);index" json:"flavor_id"`
-	HypervisorID string    `gorm:"type:char(36);index" json:"hypervisor_id"`
+	HypervisorID string    `gorm:"type:varchar(255);index" json:"hypervisor_id"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 	CollectedAt  time.Time `gorm:"index" json:"collected_at"`

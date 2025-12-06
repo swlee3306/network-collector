@@ -57,26 +57,27 @@ func (c *InstanceCollector) CollectInstances() error {
 
 // saveInstance saves a single instance to database
 func (c *InstanceCollector) saveInstance(server servers.Server) error {
-	// Get or create project
+	// Get project - must exist (collected first)
 	var projectID string
 	if server.TenantID != "" {
 		project, err := c.repository.GetProjectByOpenStackID(server.TenantID)
 		if err != nil {
-			// Project might not exist yet, will be collected separately
-			// Store project_id as string for now
-			projectID = server.TenantID
+			// Project not found - leave empty to maintain foreign key integrity
+			// The instance can be updated later when the project is collected
+			projectID = ""
 		} else {
 			projectID = project.ID
 		}
 	}
 
-	// Get or create flavor
+	// Get flavor - must exist (collected first)
 	var flavorID string
 	if flavorIDStr, ok := server.Flavor["id"].(string); ok {
 		flavor, err := c.repository.GetFlavorByOpenStackID(flavorIDStr)
 		if err != nil {
-			// Flavor might not exist yet, will be collected separately
-			flavorID = flavorIDStr
+			// Flavor not found - leave empty to maintain foreign key integrity
+			// The instance can be updated later when the flavor is collected
+			flavorID = ""
 		} else {
 			flavorID = flavor.ID
 		}

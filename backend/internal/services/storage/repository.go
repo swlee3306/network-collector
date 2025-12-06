@@ -23,13 +23,21 @@ func NewRepository(db *gorm.DB) *Repository {
 // UpsertInstance creates or updates an instance
 func (r *Repository) UpsertInstance(instance *models.Instance) error {
 	instance.CollectedAt = time.Now()
-	return r.db.Save(instance).Error
+	// Check if instance exists by open_stack_id
+	existing, err := r.GetInstanceByOpenStackID(instance.OpenStackID)
+	if err == nil && existing != nil {
+		// Update existing instance
+		instance.ID = existing.ID
+		return r.db.Save(instance).Error
+	}
+	// Create new instance
+	return r.db.Create(instance).Error
 }
 
 // GetInstanceByOpenStackID gets an instance by OpenStack ID
 func (r *Repository) GetInstanceByOpenStackID(openstackID string) (*models.Instance, error) {
 	var instance models.Instance
-	err := r.db.Where("openstack_id = ?", openstackID).First(&instance).Error
+	err := r.db.Where("open_stack_id = ?", openstackID).First(&instance).Error
 	if err != nil {
 		return nil, err
 	}
@@ -69,13 +77,21 @@ func (r *Repository) GetVolumesByProjectID(projectID string) ([]models.Volume, e
 // UpsertProject creates or updates a project
 func (r *Repository) UpsertProject(project *models.Project) error {
 	project.CollectedAt = time.Now()
-	return r.db.Save(project).Error
+	// Check if project exists by open_stack_id
+	existing, err := r.GetProjectByOpenStackID(project.OpenStackID)
+	if err == nil && existing != nil {
+		// Update existing project
+		project.ID = existing.ID
+		return r.db.Save(project).Error
+	}
+	// Create new project
+	return r.db.Create(project).Error
 }
 
 // GetProjectByOpenStackID gets a project by OpenStack ID
 func (r *Repository) GetProjectByOpenStackID(openstackID string) (*models.Project, error) {
 	var project models.Project
-	err := r.db.Where("openstack_id = ?", openstackID).First(&project).Error
+	err := r.db.Where("open_stack_id = ?", openstackID).First(&project).Error
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +120,15 @@ func (r *Repository) GetProjectByID(projectID string) (*models.Project, error) {
 // UpsertNetwork creates or updates a network
 func (r *Repository) UpsertNetwork(network *models.Network) error {
 	network.CollectedAt = time.Now()
-	return r.db.Save(network).Error
+	// Check if network exists by open_stack_id
+	existing, err := r.GetNetworkByOpenStackID(network.OpenStackID)
+	if err == nil && existing != nil {
+		// Update existing network
+		network.ID = existing.ID
+		return r.db.Save(network).Error
+	}
+	// Create new network
+	return r.db.Create(network).Error
 }
 
 // UpsertSubnet creates or updates a subnet
@@ -116,19 +140,37 @@ func (r *Repository) UpsertSubnet(subnet *models.Subnet) error {
 // UpsertPort creates or updates a port
 func (r *Repository) UpsertPort(port *models.Port) error {
 	port.CollectedAt = time.Now()
-	return r.db.Save(port).Error
+	// Check if port exists by open_stack_id
+	var existing models.Port
+	err := r.db.Where("open_stack_id = ?", port.OpenStackID).First(&existing).Error
+	if err == nil {
+		// Update existing port
+		port.ID = existing.ID
+		return r.db.Save(port).Error
+	}
+	// Create new port
+	return r.db.Create(port).Error
 }
 
 // UpsertRouter creates or updates a router
 func (r *Repository) UpsertRouter(router *models.Router) error {
 	router.CollectedAt = time.Now()
-	return r.db.Save(router).Error
+	// Check if router exists by open_stack_id
+	var existing models.Router
+	err := r.db.Where("open_stack_id = ?", router.OpenStackID).First(&existing).Error
+	if err == nil {
+		// Update existing router
+		router.ID = existing.ID
+		return r.db.Save(router).Error
+	}
+	// Create new router
+	return r.db.Create(router).Error
 }
 
 // GetNetworkByOpenStackID gets a network by OpenStack ID
 func (r *Repository) GetNetworkByOpenStackID(openstackID string) (*models.Network, error) {
 	var network models.Network
-	err := r.db.Where("openstack_id = ?", openstackID).First(&network).Error
+	err := r.db.Where("open_stack_id = ?", openstackID).First(&network).Error
 	if err != nil {
 		return nil, err
 	}
@@ -147,13 +189,21 @@ func (r *Repository) ListNetworks() ([]models.Network, error) {
 // UpsertHypervisor creates or updates a hypervisor
 func (r *Repository) UpsertHypervisor(hypervisor *models.Hypervisor) error {
 	hypervisor.CollectedAt = time.Now()
-	return r.db.Save(hypervisor).Error
+	// Check if hypervisor exists by open_stack_id
+	existing, err := r.GetHypervisorByOpenStackID(hypervisor.OpenStackID)
+	if err == nil && existing != nil {
+		// Update existing hypervisor
+		hypervisor.ID = existing.ID
+		return r.db.Save(hypervisor).Error
+	}
+	// Create new hypervisor
+	return r.db.Create(hypervisor).Error
 }
 
 // GetHypervisorByOpenStackID gets a hypervisor by OpenStack ID
 func (r *Repository) GetHypervisorByOpenStackID(openstackID string) (*models.Hypervisor, error) {
 	var hypervisor models.Hypervisor
-	err := r.db.Where("openstack_id = ?", openstackID).First(&hypervisor).Error
+	err := r.db.Where("open_stack_id = ?", openstackID).First(&hypervisor).Error
 	if err != nil {
 		return nil, err
 	}
@@ -165,13 +215,21 @@ func (r *Repository) GetHypervisorByOpenStackID(openstackID string) (*models.Hyp
 // UpsertFlavor creates or updates a flavor
 func (r *Repository) UpsertFlavor(flavor *models.Flavor) error {
 	flavor.CollectedAt = time.Now()
-	return r.db.Save(flavor).Error
+	// Check if flavor exists by open_stack_id
+	existing, err := r.GetFlavorByOpenStackID(flavor.OpenStackID)
+	if err == nil && existing != nil {
+		// Update existing flavor
+		flavor.ID = existing.ID
+		return r.db.Save(flavor).Error
+	}
+	// Create new flavor
+	return r.db.Create(flavor).Error
 }
 
 // GetFlavorByOpenStackID gets a flavor by OpenStack ID
 func (r *Repository) GetFlavorByOpenStackID(openstackID string) (*models.Flavor, error) {
 	var flavor models.Flavor
-	err := r.db.Where("openstack_id = ?", openstackID).First(&flavor).Error
+	err := r.db.Where("open_stack_id = ?", openstackID).First(&flavor).Error
 	if err != nil {
 		return nil, err
 	}
@@ -327,7 +385,7 @@ func (r *Repository) GetRoutersByNetwork(networkOpenStackID string) ([]models.Ro
 	
 	// First, find the network by OpenStack ID
 	var network models.Network
-	if err := r.db.Where("openstack_id = ?", networkOpenStackID).First(&network).Error; err != nil {
+	if err := r.db.Where("open_stack_id = ?", networkOpenStackID).First(&network).Error; err != nil {
 		// Network not found, return empty slice
 		return []models.Router{}, nil
 	}
@@ -355,7 +413,7 @@ func (r *Repository) GetRoutersByNetwork(networkOpenStackID string) ([]models.Ro
 	
 	// Find routers by their OpenStack IDs
 	var routers []models.Router
-	err := r.db.Where("openstack_id IN ?", routerOpenStackIDs).Find(&routers).Error
+	err := r.db.Where("open_stack_id IN ?", routerOpenStackIDs).Find(&routers).Error
 	return routers, err
 }
 

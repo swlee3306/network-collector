@@ -57,11 +57,14 @@ func (c *NetworkCollector) CollectNetworks() error {
 
 // saveNetwork saves a single network to database
 func (c *NetworkCollector) saveNetwork(network networks.Network) error {
+	// Get project - must exist (collected first)
 	var projectID string
 	if network.TenantID != "" {
 		project, err := c.repository.GetProjectByOpenStackID(network.TenantID)
 		if err != nil {
-			projectID = network.TenantID
+			// Project not found - leave empty to maintain foreign key integrity
+			// The network can be updated later when the project is collected
+			projectID = ""
 		} else {
 			projectID = project.ID
 		}
@@ -123,12 +126,14 @@ func (c *NetworkCollector) CollectPorts() error {
 
 // savePort saves a single port to database
 func (c *NetworkCollector) savePort(port ports.Port) error {
-	// Get network
+	// Get network - must exist (collected first)
 	var networkID string
 	if port.NetworkID != "" {
 		network, err := c.repository.GetNetworkByOpenStackID(port.NetworkID)
 		if err != nil {
-			networkID = port.NetworkID
+			// Network not found - leave empty to maintain foreign key integrity
+			// The port can be updated later when the network is collected
+			networkID = ""
 		} else {
 			networkID = network.ID
 		}
