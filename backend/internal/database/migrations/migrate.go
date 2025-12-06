@@ -17,6 +17,14 @@ func RunMigrations(db *gorm.DB) error {
 		// Continue with migration even if data fix fails
 	}
 
+	// Drop foreign key constraints that might cause GORM to create wrong column types
+	// GORM AutoMigrate creates foreign key columns based on referenced table's primary key type
+	// We need to prevent this for hypervisor_id and device_id which should be VARCHAR(255)
+	if err := dropProblematicForeignKeys(db); err != nil {
+		log.Printf("Warning: Failed to drop problematic foreign keys: %v", err)
+		// Continue with migration even if FK drop fails
+	}
+
 	// Auto-migrate all models
 	allModels := models.AllModels()
 	if err := db.AutoMigrate(allModels...); err != nil {
@@ -24,7 +32,7 @@ func RunMigrations(db *gorm.DB) error {
 	}
 
 	// Ensure hypervisor_id and device_id columns are VARCHAR(255) after migration
-	// This prevents GORM from trying to change them back to char(36)
+	// GORM AutoMigrate might have created them as char(36) due to foreign key relationships
 	if err := ensureColumnTypes(db); err != nil {
 		log.Printf("Warning: Failed to ensure column types: %v", err)
 		// Continue even if column type fix fails
@@ -36,6 +44,38 @@ func RunMigrations(db *gorm.DB) error {
 	}
 
 	log.Println("Database migrations completed successfully")
+	return nil
+}
+
+// dropProblematicForeignKeys drops foreign key constraints that cause GORM to create wrong column types
+// This should be called BEFORE AutoMigrate to prevent GORM from creating char(36) columns
+func dropProblematicForeignKeys(db *gorm.DB) error {
+	// Drop fk_hypervisors_instances if it exists
+	// This prevents GORM from creating hypervisor_id as char(36)
+	if db.Migrator().HasTable(&models.Instance{}) {
+		var fkName string
+		err := db.Raw(`
+			SELECT CONSTRAINT_NAME
+			FROM information_schema.KEY_COLUMN_USAGE
+			WHERE TABLE_SCHEMA = DATABASE()
+			AND TABLE_NAME = 'instances'
+			AND COLUMN_NAME = 'hypervisor_id'
+			AND REFERENCED_TABLE_NAME IS NOT NULL
+			LIMIT 1
+		`).Scan(&fkName).Error
+
+		if err == nil && fkName != "" {
+			log.Printf("Dropping foreign key constraint before migration: %s", fkName)
+			if err := db.Exec(`
+				SET FOREIGN_KEY_CHECKS = 0;
+				ALTER TABLE instances DROP FOREIGN KEY ` + fkName + `;
+				SET FOREIGN_KEY_CHECKS = 1;
+			`).Error; err != nil {
+				log.Printf("Warning: Failed to drop foreign key constraint: %v", err)
+			}
+		}
+	}
+
 	return nil
 }
 
