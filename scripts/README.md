@@ -58,6 +58,61 @@ IMAGE_REGISTRY=your-registry.io/ IMAGE_TAG=v1.0.0 ./scripts/deploy.sh helm
 - `IMAGE_REGISTRY`: 이미지 레지스트리 URL (예: `your-registry.io/`)
 - `IMAGE_TAG`: 이미지 태그 (기본값: `latest`)
 
+### setup-ssh-keys.sh
+
+Kubernetes 노드들에 SSH 키를 배포하는 스크립트입니다. `deploy-images-to-nodes.sh`를 사용하기 전에 먼저 실행하는 것을 권장합니다.
+
+**사용법:**
+```bash
+# 자동으로 노드 감지하여 SSH 키 배포
+./scripts/setup-ssh-keys.sh
+
+# 특정 노드에 SSH 키 배포
+./scripts/setup-ssh-keys.sh k8s-master-01 k8s-worker-01 k8s-worker-02
+```
+
+**예시:**
+```bash
+# 모든 노드에 SSH 키 배포
+./scripts/setup-ssh-keys.sh
+
+# 특정 노드에 SSH 키 배포 (user@host 형식)
+./scripts/setup-ssh-keys.sh user@k8s-master-01 user@k8s-worker-01
+```
+
+**기능:**
+- SSH 키 자동 생성 (없는 경우)
+- 각 노드의 `~/.ssh/authorized_keys`에 공개키 추가
+- 비밀번호 없이 접속 가능하도록 설정
+- SSH 키 위치: `~/.ssh/id_rsa_network_collector`
+
+### deploy-images-to-nodes.sh
+
+모든 Kubernetes 노드에 Docker 이미지를 배포하는 스크립트입니다.
+
+**사용법:**
+```bash
+# 자동으로 노드 감지하여 이미지 배포
+./scripts/deploy-images-to-nodes.sh
+
+# 특정 노드에 이미지 배포
+./scripts/deploy-images-to-nodes.sh k8s-master-01 k8s-worker-01
+```
+
+**예시:**
+```bash
+# 모든 노드에 이미지 배포
+./scripts/deploy-images-to-nodes.sh
+
+# 특정 노드에 이미지 배포
+./scripts/deploy-images-to-nodes.sh k8s-master-01 k8s-worker-01 k8s-worker-02
+```
+
+**주의사항:**
+- `setup-ssh-keys.sh`를 먼저 실행하여 SSH 키를 설정하는 것을 권장합니다.
+- SSH 키가 설정되어 있으면 자동으로 사용하며, 없으면 기본 SSH 키를 사용합니다.
+- 첫 번째 노드에서 이미지를 빌드하고, 나머지 노드에 배포합니다.
+
 ### undeploy.sh
 
 배포된 시스템을 제거하는 스크립트입니다.
@@ -82,7 +137,43 @@ IMAGE_REGISTRY=your-registry.io/ IMAGE_TAG=v1.0.0 ./scripts/deploy.sh helm
 
 ## 전체 배포 워크플로우
 
-### 1. 이미지 빌드 및 푸시
+### 로컬 이미지 사용 (imagePullPolicy: Never)
+
+#### 1. SSH 키 설정 (권장)
+
+```bash
+# 모든 노드에 SSH 키 배포
+./scripts/setup-ssh-keys.sh
+```
+
+#### 2. 이미지 빌드 및 배포
+
+```bash
+# 모든 노드에 이미지 빌드 및 배포
+./scripts/deploy-images-to-nodes.sh
+
+# 또는 특정 노드에만 배포
+./scripts/deploy-images-to-nodes.sh k8s-master-01 k8s-worker-01
+```
+
+#### 3. 배포
+
+```bash
+# Kubernetes로 배포
+./scripts/deploy.sh k8s
+```
+
+#### 4. 상태 확인
+
+```bash
+kubectl get pods
+kubectl get services
+kubectl logs -f deployment/network-collector
+```
+
+### 레지스트리 사용 (imagePullPolicy: Always/IfNotPresent)
+
+#### 1. 이미지 빌드 및 푸시
 
 ```bash
 # 이미지 빌드
@@ -94,14 +185,14 @@ docker push your-registry.io/network-collector-api:latest
 docker push your-registry.io/network-collector-frontend:latest
 ```
 
-### 2. 배포
+#### 2. 배포
 
 ```bash
 # Helm으로 배포
 IMAGE_REGISTRY=your-registry.io/ IMAGE_TAG=latest ./scripts/deploy.sh helm
 ```
 
-### 3. 상태 확인
+#### 3. 상태 확인
 
 ```bash
 kubectl get pods

@@ -2,6 +2,9 @@
 
 # 모든 Kubernetes 노드에 이미지를 배포하는 스크립트
 # 사용법: ./scripts/deploy-images-to-nodes.sh [node1] [node2] ...
+# 
+# SSH 키 설정이 필요하면 먼저 실행:
+# ./scripts/setup-ssh-keys.sh [node1] [node2] ...
 
 set -e
 
@@ -50,6 +53,34 @@ if [ ${#NODES[@]} -eq 0 ]; then
     exit 1
 fi
 
+# SSH 키 확인 및 설정
+SSH_KEY="$HOME/.ssh/id_rsa_network_collector"
+check_ssh_connection() {
+    local node=$1
+    if [[ "$node" == *"@"* ]]; then
+        # SSH 형식
+        if ssh -i "$SSH_KEY" -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$node" "echo 'test'" &>/dev/null; then
+            return 0
+        fi
+    else
+        # 호스트명만
+        if ssh -i "$SSH_KEY" -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$node" "echo 'test'" &>/dev/null; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# SSH 키가 있으면 사용, 없으면 기본 키 사용
+if [ -f "$SSH_KEY" ]; then
+    log_info "전용 SSH 키를 사용합니다: $SSH_KEY"
+    SSH_OPTS="-i $SSH_KEY"
+else
+    log_warn "전용 SSH 키를 찾을 수 없습니다. 기본 SSH 키를 사용합니다."
+    log_info "SSH 키를 설정하려면: ./scripts/setup-ssh-keys.sh ${NODES[@]}"
+    SSH_OPTS=""
+fi
+
 # 첫 번째 노드에서 이미지 빌드
 BUILD_NODE=${NODES[0]}
 log_info "이미지 빌드를 시작합니다 (노드: $BUILD_NODE)..."
@@ -59,8 +90,8 @@ if [[ "$BUILD_NODE" == *"@"* ]]; then
     # SSH 형식: user@host
     SSH_USER=$(echo $BUILD_NODE | cut -d'@' -f1)
     SSH_HOST=$(echo $BUILD_NODE | cut -d'@' -f2)
-    SSH_CMD="ssh $SSH_USER@$SSH_HOST"
-    SCP_CMD="scp"
+    SSH_CMD="ssh $SSH_OPTS $SSH_USER@$SSH_HOST"
+    SCP_CMD="scp $SSH_OPTS"
     REMOTE_PATH="/tmp/network-collector"
 else
     # 로컬 노드
@@ -125,13 +156,13 @@ for node in "${NODES[@]}"; do
         # 이미지 tar 복사
         if [ -n "$SSH_CMD" ]; then
             # 빌드 노드에서 대상 노드로 직접 복사
-            $SSH_CMD "scp $IMAGE_TAR $NODE_USER@$NODE_HOST:/tmp/"
+            $SSH_CMD "scp $SSH_OPTS $IMAGE_TAR $NODE_USER@$NODE_HOST:/tmp/"
         else
-            scp "$IMAGE_TAR" "$node:/tmp/"
+            scp $SSH_OPTS "$IMAGE_TAR" "$node:/tmp/"
         fi
         
         # 이미지 로드 (Docker 또는 containerd)
-        ssh "$node" "
+        ssh $SSH_OPTS "$node" "
             if command -v docker &> /dev/null; then
                 docker load -i /tmp/network-collector-images.tar && rm /tmp/network-collector-images.tar
             elif command -v ctr &> /dev/null; then
@@ -175,7 +206,7 @@ log_info "배포된 이미지 확인:"
 for node in "${NODES[@]}"; do
     if [[ "$node" == *"@"* ]]; then
         log_info "$node:"
-        ssh "$node" "
+        ssh $SSH_OPTS "$node" "
             if command -v docker &> /dev/null; then
                 docker images | grep network-collector || true
             elif command -v crictl &> /dev/null; then
