@@ -84,12 +84,14 @@ func (c *InstanceCollector) saveInstance(server servers.Server) error {
 	}
 
 	// Get hypervisor ID from server details
+	// server.HostID is a hash (56 chars), which doesn't directly map to hypervisor OpenStack ID
+	// We need to find hypervisor by hostname or other means
+	// For now, we'll leave it empty and it will be updated later when topology is built
+	// The hypervisor relationship can be established through the topology analyzer
 	var hypervisorID string
-	if server.HostID != "" {
-		// Try to find hypervisor by hostname or host_id
-		// This will be improved when we collect hypervisors
-		hypervisorID = server.HostID
-	}
+	// Note: server.HostID is not the same as hypervisor OpenStack ID
+	// We'll leave hypervisorID empty for now and let it be populated later
+	// when we have better hypervisor matching logic
 
 	instance := &models.Instance{
 		OpenStackID:  server.ID,
