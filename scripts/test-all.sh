@@ -3,7 +3,8 @@
 # Network Collector 종합 테스트 스크립트
 # 모든 기능을 자동으로 테스트하고 결과를 보고합니다.
 
-set -e
+# set -e를 제거하고 각 테스트가 독립적으로 실행되도록 함
+set +e
 
 # 색상 출력
 GREEN='\033[0;32m'
@@ -65,42 +66,48 @@ test_kubernetes_resources() {
     
     # Pods 확인
     log_test "Pods 상태 확인"
-    PODS=$(kubectl get pods -l app=network-collector-api -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
-    if [ -n "$PODS" ]; then
+    PODS=$(kubectl get pods -l app=network-collector-api -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+    if [ -n "$PODS" ] && [ "$PODS" != "" ]; then
         for pod in $PODS; do
-            STATUS=$(kubectl get pod $pod -o jsonpath='{.status.phase}' 2>/dev/null)
-            if [ "$STATUS" = "Running" ]; then
-                test_pass "API Pod $pod: $STATUS"
-            else
-                test_fail "API Pod $pod: $STATUS"
+            if [ -n "$pod" ]; then
+                STATUS=$(kubectl get pod "$pod" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+                if [ "$STATUS" = "Running" ]; then
+                    test_pass "API Pod $pod: $STATUS"
+                else
+                    test_fail "API Pod $pod: $STATUS"
+                fi
             fi
         done
     else
         test_fail "API Pod를 찾을 수 없습니다"
     fi
     
-    PODS=$(kubectl get pods -l app=network-collector-frontend -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
-    if [ -n "$PODS" ]; then
+    PODS=$(kubectl get pods -l app=network-collector-frontend -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+    if [ -n "$PODS" ] && [ "$PODS" != "" ]; then
         for pod in $PODS; do
-            STATUS=$(kubectl get pod $pod -o jsonpath='{.status.phase}' 2>/dev/null)
-            if [ "$STATUS" = "Running" ]; then
-                test_pass "Frontend Pod $pod: $STATUS"
-            else
-                test_fail "Frontend Pod $pod: $STATUS"
+            if [ -n "$pod" ]; then
+                STATUS=$(kubectl get pod "$pod" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+                if [ "$STATUS" = "Running" ]; then
+                    test_pass "Frontend Pod $pod: $STATUS"
+                else
+                    test_fail "Frontend Pod $pod: $STATUS"
+                fi
             fi
         done
     else
         test_fail "Frontend Pod를 찾을 수 없습니다"
     fi
     
-    PODS=$(kubectl get pods -l app=network-collector -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
-    if [ -n "$PODS" ]; then
+    PODS=$(kubectl get pods -l app=network-collector -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+    if [ -n "$PODS" ] && [ "$PODS" != "" ]; then
         for pod in $PODS; do
-            STATUS=$(kubectl get pod $pod -o jsonpath='{.status.phase}' 2>/dev/null)
-            if [ "$STATUS" = "Running" ]; then
-                test_pass "Collector Pod $pod: $STATUS"
-            else
-                test_fail "Collector Pod $pod: $STATUS"
+            if [ -n "$pod" ]; then
+                STATUS=$(kubectl get pod "$pod" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+                if [ "$STATUS" = "Running" ]; then
+                    test_pass "Collector Pod $pod: $STATUS"
+                else
+                    test_fail "Collector Pod $pod: $STATUS"
+                fi
             fi
         done
     else
@@ -109,14 +116,14 @@ test_kubernetes_resources() {
     
     # Services 확인
     log_test "Services 확인"
-    API_SVC=$(kubectl get svc network-collector-api -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
+    API_SVC=$(kubectl get svc network-collector-api -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
     if [ -n "$API_SVC" ]; then
         test_pass "API Service: $API_SVC"
     else
         test_fail "API Service를 찾을 수 없습니다"
     fi
     
-    FRONTEND_SVC=$(kubectl get svc network-collector-frontend -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
+    FRONTEND_SVC=$(kubectl get svc network-collector-frontend -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
     if [ -n "$FRONTEND_SVC" ]; then
         test_pass "Frontend Service: $FRONTEND_SVC"
     else
@@ -125,8 +132,8 @@ test_kubernetes_resources() {
     
     # Ingress 확인
     log_test "Ingress 확인"
-    INGRESS=$(kubectl get ingress network-collector-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-    if [ -n "$INGRESS" ] || kubectl get ingress network-collector-ingress &>/dev/null; then
+    if kubectl get ingress network-collector-ingress &>/dev/null; then
+        INGRESS=$(kubectl get ingress network-collector-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
         test_pass "Ingress 리소스 존재"
     else
         test_warn "Ingress 리소스를 찾을 수 없습니다"
@@ -241,7 +248,7 @@ test_api_endpoints() {
     log_section "3. API 엔드포인트 테스트"
     
     # API Pod에서 직접 테스트
-    API_POD=$(kubectl get pods -l app=network-collector-api -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    API_POD=$(kubectl get pods -l app=network-collector-api -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
     if [ -z "$API_POD" ]; then
         test_fail "API Pod를 찾을 수 없습니다"
         return
@@ -249,10 +256,11 @@ test_api_endpoints() {
     
     # Health check
     log_test "Health Check"
-    if kubectl exec $API_POD -- wget -qO- http://localhost:8080/health 2>/dev/null | grep -q "ok\|healthy"; then
+    HEALTH_RESPONSE=$(kubectl exec $API_POD -- wget -qO- http://localhost:8080/health 2>/dev/null || echo "")
+    if echo "$HEALTH_RESPONSE" | grep -q "ok\|healthy"; then
         test_pass "Health Check: OK"
     else
-        test_fail "Health Check: 실패"
+        test_fail "Health Check: 실패 (응답: ${HEALTH_RESPONSE:0:50})"
     fi
     
     # 로그인 테스트
@@ -260,26 +268,26 @@ test_api_endpoints() {
     AUTH_TOKEN=$(kubectl get secret network-collector-secrets -o jsonpath='{.data.AUTH_TOKEN}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
     if [ -z "$AUTH_TOKEN" ]; then
         test_fail "AUTH_TOKEN을 찾을 수 없습니다"
-        return
-    fi
-    
-    LOGIN_RESPONSE=$(kubectl exec $API_POD -- sh -c "
-        wget -qO- --post-data='{\"token\":\"$AUTH_TOKEN\"}' \
-        --header='Content-Type: application/json' \
-        http://localhost:8080/api/v1/auth/login 2>/dev/null || echo 'FAIL'
-    " 2>/dev/null)
-    
-    if echo "$LOGIN_RESPONSE" | grep -q "token\|success"; then
-        test_pass "로그인 API: 성공"
-        # 토큰 추출
-        TOKEN=$(echo "$LOGIN_RESPONSE" | grep -o '"token":"[^"]*' | cut -d'"' -f4 || echo "")
-    else
-        test_fail "로그인 API: 실패"
         TOKEN=""
-    fi
-    
-    if [ -z "$TOKEN" ]; then
-        TOKEN="$AUTH_TOKEN"
+    else
+        LOGIN_RESPONSE=$(kubectl exec $API_POD -- sh -c "
+            wget -qO- --post-data='{\"token\":\"$AUTH_TOKEN\"}' \
+            --header='Content-Type: application/json' \
+            http://localhost:8080/api/v1/auth/login 2>/dev/null || echo 'FAIL'
+        " 2>/dev/null || echo "FAIL")
+        
+        if echo "$LOGIN_RESPONSE" | grep -q "token\|success"; then
+            test_pass "로그인 API: 성공"
+            # 토큰 추출
+            TOKEN=$(echo "$LOGIN_RESPONSE" | grep -o '"token":"[^"]*' | cut -d'"' -f4 || echo "")
+        else
+            test_fail "로그인 API: 실패 (응답: ${LOGIN_RESPONSE:0:50})"
+            TOKEN=""
+        fi
+        
+        if [ -z "$TOKEN" ]; then
+            TOKEN="$AUTH_TOKEN"
+        fi
     fi
     
     # API 엔드포인트 테스트
@@ -294,15 +302,20 @@ test_api_endpoints() {
     )
     
     for endpoint in "${ENDPOINTS[@]}"; do
+        if [ -z "$TOKEN" ]; then
+            test_warn "$endpoint: 토큰 없음 (스킵)"
+            continue
+        fi
+        
         RESPONSE=$(kubectl exec $API_POD -- sh -c "
             wget -qO- --header='Authorization: Bearer $TOKEN' \
             http://localhost:8080$endpoint 2>/dev/null || echo 'FAIL'
-        " 2>/dev/null)
+        " 2>/dev/null || echo "FAIL")
         
         if echo "$RESPONSE" | grep -q "\[\]\|{"; then
             test_pass "$endpoint: 응답 성공"
         else
-            test_fail "$endpoint: 응답 실패"
+            test_fail "$endpoint: 응답 실패 (응답: ${RESPONSE:0:50})"
         fi
     done
 }
@@ -313,7 +326,7 @@ test_api_endpoints() {
 test_collector() {
     log_section "4. Collector 상태 확인"
     
-    COLLECTOR_POD=$(kubectl get pods -l app=network-collector -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    COLLECTOR_POD=$(kubectl get pods -l app=network-collector -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
     if [ -z "$COLLECTOR_POD" ]; then
         test_fail "Collector Pod를 찾을 수 없습니다"
         return
@@ -365,7 +378,7 @@ test_collector() {
 test_frontend() {
     log_section "5. 프론트엔드 접근성 테스트"
     
-    FRONTEND_POD=$(kubectl get pods -l app=network-collector-frontend -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    FRONTEND_POD=$(kubectl get pods -l app=network-collector-frontend -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
     if [ -z "$FRONTEND_POD" ]; then
         test_fail "Frontend Pod를 찾을 수 없습니다"
         return
@@ -464,12 +477,13 @@ main() {
     echo "╚════════════════════════════════════════╝"
     echo -e "${NC}"
     
-    test_kubernetes_resources
-    test_database
-    test_api_endpoints
-    test_collector
-    test_frontend
-    test_ingress
+    # 각 테스트를 독립적으로 실행 (에러가 발생해도 계속 진행)
+    test_kubernetes_resources || true
+    test_database || true
+    test_api_endpoints || true
+    test_collector || true
+    test_frontend || true
+    test_ingress || true
     
     print_summary
 }
