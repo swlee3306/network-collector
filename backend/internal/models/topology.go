@@ -70,9 +70,9 @@ type TopologyEdge struct {
 	CreatedAt    time.Time `json:"created_at"`
 	CollectedAt  time.Time `gorm:"index" json:"collected_at"`
 
-	// Relationships
-	SourceNode TopologyNode `gorm:"foreignKey:SourceNodeID" json:"source_node,omitempty"`
-	TargetNode TopologyNode `gorm:"foreignKey:TargetNodeID" json:"target_node,omitempty"`
+	// Relationships (not included in JSON - nodes are provided separately in API response)
+	SourceNode TopologyNode `gorm:"foreignKey:SourceNodeID" json:"-"`
+	TargetNode TopologyNode `gorm:"foreignKey:TargetNodeID" json:"-"`
 }
 
 // TableName specifies the table name
