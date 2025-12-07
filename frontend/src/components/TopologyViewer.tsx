@@ -28,6 +28,15 @@ const TopologyViewer: React.FC<TopologyViewerProps> = ({
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [highlightedPath, setHighlightedPath] = useState<string[]>([]);
 
+  // Separate effect to ensure container is ready
+  useEffect(() => {
+    if (!containerRef.current) {
+      console.log('TopologyViewer: Waiting for container to be ready...');
+      return;
+    }
+    console.log('TopologyViewer: Container is ready');
+  }, []);
+
   useEffect(() => {
     // Don't proceed if no resource ID is provided
     if (!instanceId && !hostId && !networkId) {
@@ -192,26 +201,6 @@ const TopologyViewer: React.FC<TopologyViewerProps> = ({
         const data: TopologyData = response.data.data;
         console.log('Topology data:', data);
 
-        // Initialize Cytoscape if not already initialized
-        if (!cy) {
-          cy = initializeCytoscape();
-          if (!cy) {
-            // Retry after a short delay
-            setTimeout(() => {
-              cy = initializeCytoscape();
-              if (cy) {
-                cyRef.current = cy;
-                updateGraph(cy, data);
-              } else {
-                setError('Failed to initialize graph container');
-                setLoading(false);
-              }
-            }, 100);
-            return;
-          }
-          cyRef.current = cy;
-        }
-
         // Helper function to update graph
         const updateGraph = (cyInstance: Core, data: TopologyData) => {
           // Transform data for Cytoscape
@@ -293,6 +282,37 @@ const TopologyViewer: React.FC<TopologyViewerProps> = ({
           cyInstance.boxSelectionEnabled(true);
         };
 
+        // Initialize Cytoscape if not already initialized
+        if (!cy) {
+          cy = initializeCytoscape();
+          if (!cy) {
+            // Retry with exponential backoff
+            let retryCount = 0;
+            const maxRetries = 10;
+            const retryInterval = 100;
+            
+            const retryInit = () => {
+              retryCount++;
+              cy = initializeCytoscape();
+              if (cy) {
+                cyRef.current = cy;
+                updateGraph(cy, data);
+                setLoading(false);
+              } else if (retryCount < maxRetries) {
+                setTimeout(retryInit, retryInterval * retryCount);
+              } else {
+                console.error('TopologyViewer: Failed to initialize graph container after', maxRetries, 'retries');
+                setError('Failed to initialize graph container. Please refresh the page.');
+                setLoading(false);
+              }
+            };
+            
+            setTimeout(retryInit, retryInterval);
+            return;
+          }
+          cyRef.current = cy;
+        }
+
         updateGraph(cy, data);
         setLoading(false);
       } catch (err: any) {
@@ -319,25 +339,26 @@ const TopologyViewer: React.FC<TopologyViewerProps> = ({
     };
   }, [instanceId, hostId, networkId, maxDepth]);
 
-  if (loading) {
-    return (
-      <div className="topology-viewer-loading">
-        <p>Loading topology...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="topology-viewer-error">
-        <p>Error: {error}</p>
-      </div>
-    );
-  }
-
   return (
     <div className="topology-viewer">
-      <div ref={containerRef} className="topology-viewer-container" />
+      {loading && (
+        <div className="topology-viewer-loading">
+          <p>Loading topology...</p>
+        </div>
+      )}
+      {error && (
+        <div className="topology-viewer-error">
+          <p>Error: {error}</p>
+        </div>
+      )}
+      <div 
+        ref={containerRef} 
+        className="topology-viewer-container" 
+        style={{ 
+          visibility: loading || error ? 'hidden' : 'visible',
+          position: loading || error ? 'absolute' : 'relative'
+        }}
+      />
       <div className="topology-legend">
         <div className="legend-item">
           <div className="legend-node vm"></div>
