@@ -8,6 +8,7 @@ import Metrics from './pages/Metrics';
 import InstanceDetail from './pages/InstanceDetail';
 import ProjectComparison from './pages/ProjectComparison';
 import ResourceList from './pages/ResourceList';
+import ResourceDetail from './pages/ResourceDetail';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
@@ -72,10 +73,26 @@ function App() {
           }
         />
         <Route
+          path="/projects/:id"
+          element={
+            <PrivateRoute>
+              <ResourceDetail />
+            </PrivateRoute>
+          }
+        />
+        <Route
           path="/networks"
           element={
             <PrivateRoute>
               <ResourceList />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/networks/:id"
+          element={
+            <PrivateRoute>
+              <ResourceDetail />
             </PrivateRoute>
           }
         />
@@ -88,6 +105,14 @@ function App() {
           }
         />
         <Route
+          path="/hypervisors/:id"
+          element={
+            <PrivateRoute>
+              <ResourceDetail />
+            </PrivateRoute>
+          }
+        />
+        <Route
           path="/flavors"
           element={
             <PrivateRoute>
@@ -96,10 +121,26 @@ function App() {
           }
         />
         <Route
+          path="/flavors/:id"
+          element={
+            <PrivateRoute>
+              <ResourceDetail />
+            </PrivateRoute>
+          }
+        />
+        <Route
           path="/volumes"
           element={
             <PrivateRoute>
               <ResourceList />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/volumes/:id"
+          element={
+            <PrivateRoute>
+              <ResourceDetail />
             </PrivateRoute>
           }
         />
