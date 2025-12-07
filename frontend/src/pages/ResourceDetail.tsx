@@ -70,7 +70,7 @@ const ResourceDetail: React.FC = () => {
   const renderResourceDetails = () => {
     if (!resource) return null;
 
-    const details: JSX.Element[] = [];
+    const details: React.ReactElement[] = [];
 
     // Common fields
     details.push(
