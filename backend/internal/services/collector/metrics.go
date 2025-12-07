@@ -125,36 +125,34 @@ func (c *MetricsCollector) collectNetworkMetric(network models.Network) error {
 	// Network metrics would typically come from Neutron agents or monitoring tools
 	// For now, we'll calculate basic metrics from available data
 
-	// Get network with ports to count connected VMs
-	networkWithPorts, err := c.repository.GetNetwork(network.ID)
+	// Get ports for this network
+	ports, err := c.repository.GetPortsByNetworkID(network.ID)
 	if err != nil {
-		log.Printf("Failed to get network with ports: %v", err)
-		networkWithPorts = &network
+		log.Printf("Failed to get ports for network %s: %v", network.ID, err)
+		ports = []models.Port{}
 	}
 
 	// Count connected VMs by checking ports with device_owner = "compute:nova"
 	connectedVMsCount := 0
 	vmInstanceIDs := make(map[string]bool)
 	
-	if networkWithPorts != nil {
-		for _, port := range networkWithPorts.Ports {
-			// Ports with device_owner starting with "compute:" are VM interfaces
-			if port.DeviceOwner != "" && (port.DeviceOwner == "compute:nova" || 
-				(len(port.DeviceOwner) > 8 && port.DeviceOwner[:8] == "compute:")) {
-				// Try to find instance by device_id (could be OpenStack ID or internal ID)
-				if port.DeviceID != nil && *port.DeviceID != "" {
-					// Check if we've already counted this instance
-					if !vmInstanceIDs[*port.DeviceID] {
-						// Try to find instance by OpenStack ID first
-						instance, err := c.repository.GetInstanceByOpenStackID(*port.DeviceID)
-						if err != nil {
-							// Try by internal ID
-							instance, err = c.repository.GetInstanceByID(*port.DeviceID)
-						}
-						if err == nil && instance != nil {
-							vmInstanceIDs[instance.ID] = true
-							connectedVMsCount++
-						}
+	for _, port := range ports {
+		// Ports with device_owner starting with "compute:" are VM interfaces
+		if port.DeviceOwner != "" && (port.DeviceOwner == "compute:nova" || 
+			(len(port.DeviceOwner) > 8 && port.DeviceOwner[:8] == "compute:")) {
+			// Try to find instance by device_id (could be OpenStack ID or internal ID)
+			if port.DeviceID != nil && *port.DeviceID != "" {
+				// Check if we've already counted this instance
+				if !vmInstanceIDs[*port.DeviceID] {
+					// Try to find instance by OpenStack ID first
+					instance, err := c.repository.GetInstanceByOpenStackID(*port.DeviceID)
+					if err != nil {
+						// Try by internal ID
+						instance, err = c.repository.GetInstanceByID(*port.DeviceID)
+					}
+					if err == nil && instance != nil {
+						vmInstanceIDs[instance.ID] = true
+						connectedVMsCount++
 					}
 				}
 			}

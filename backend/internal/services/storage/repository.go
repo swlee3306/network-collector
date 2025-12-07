@@ -452,6 +452,13 @@ func (r *Repository) GetPortsByOpenStackDeviceID(openstackDeviceID string) ([]mo
 	return ports, err
 }
 
+// GetPortsByNetworkID gets all ports for a specific network
+func (r *Repository) GetPortsByNetworkID(networkID string) ([]models.Port, error) {
+	var ports []models.Port
+	err := r.db.Where("network_id = ?", networkID).Find(&ports).Error
+	return ports, err
+}
+
 // GetRoutersByNetwork gets routers connected to a network (simplified - in production use Neutron API)
 func (r *Repository) GetRoutersByNetwork(networkOpenStackID string) ([]models.Router, error) {
 	// This is a simplified implementation
