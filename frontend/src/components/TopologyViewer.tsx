@@ -155,12 +155,17 @@ const TopologyViewer: React.FC<TopologyViewerProps> = ({
         setLoading(true);
         setError(null);
 
+        console.log('Loading topology:', { instanceId, hostId, networkId, maxDepth });
+
         let response;
         if (instanceId) {
+          console.log('Fetching instance topology:', instanceId);
           response = await topologyAPI.getInstanceTopology(instanceId, maxDepth);
         } else if (hostId) {
+          console.log('Fetching host topology:', hostId);
           response = await topologyAPI.getHostTopology(hostId, maxDepth);
         } else if (networkId) {
+          console.log('Fetching network topology:', networkId);
           response = await topologyAPI.getNetworkTopology(networkId);
         } else {
           setError('No resource ID provided');
@@ -168,7 +173,9 @@ const TopologyViewer: React.FC<TopologyViewerProps> = ({
           return;
         }
 
+        console.log('Topology API response:', response);
         const data: TopologyData = response.data.data;
+        console.log('Topology data:', data);
 
         // Transform data for Cytoscape
         const elements: any[] = [];
@@ -250,7 +257,14 @@ const TopologyViewer: React.FC<TopologyViewerProps> = ({
 
         setLoading(false);
       } catch (err: any) {
-        setError(err.response?.data?.error || 'Failed to load topology');
+        console.error('Topology loading error:', err);
+        console.error('Error details:', {
+          message: err.message,
+          response: err.response,
+          status: err.response?.status,
+          data: err.response?.data,
+        });
+        setError(err.response?.data?.error || err.message || 'Failed to load topology');
         setLoading(false);
       }
     };
