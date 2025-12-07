@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { metricsAPI, resourceAPI } from '../services/api';
 import MetricsChart from '../components/MetricsChart';
@@ -33,17 +33,9 @@ const Metrics: React.FC = () => {
       setResourceType('hypervisor');
       setResourceId(hypervisorId);
     }
+  }, [searchParams]);
 
-    loadResources();
-  }, []);
-
-  useEffect(() => {
-    if (resourceId) {
-      loadMetrics();
-    }
-  }, [resourceId, resourceType, timeRange]);
-
-  const loadResources = async () => {
+  const loadResources = useCallback(async () => {
     try {
       let response;
       if (resourceType === 'instance') {
@@ -57,9 +49,11 @@ const Metrics: React.FC = () => {
     } catch (err) {
       console.error('Failed to load resources:', err);
     }
-  };
+  }, [resourceType]);
 
-  const loadMetrics = async () => {
+  const loadMetrics = useCallback(async () => {
+    if (!resourceId) return;
+    
     try {
       setLoading(true);
       setError(null);
@@ -79,7 +73,17 @@ const Metrics: React.FC = () => {
       setError(err.response?.data?.error || 'Failed to load metrics');
       setLoading(false);
     }
-  };
+  }, [resourceId, resourceType, timeRange.start, timeRange.end]);
+
+  useEffect(() => {
+    loadResources();
+  }, [loadResources]);
+
+  useEffect(() => {
+    if (resourceId) {
+      loadMetrics();
+    }
+  }, [resourceId, loadMetrics]);
 
   return (
     <div className="metrics-page">
@@ -99,7 +103,6 @@ const Metrics: React.FC = () => {
               onChange={(e) => {
                 setResourceType(e.target.value as 'instance' | 'network' | 'hypervisor');
                 setResourceId('');
-                loadResources();
               }}
             >
               <option value="instance">Instance</option>
