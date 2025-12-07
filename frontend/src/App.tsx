@@ -7,6 +7,7 @@ import Topology from './pages/Topology';
 import Metrics from './pages/Metrics';
 import InstanceDetail from './pages/InstanceDetail';
 import ProjectComparison from './pages/ProjectComparison';
+import ResourceList from './pages/ResourceList';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
@@ -39,6 +40,14 @@ function App() {
           }
         />
         <Route
+          path="/instances"
+          element={
+            <PrivateRoute>
+              <ResourceList />
+            </PrivateRoute>
+          }
+        />
+        <Route
           path="/instances/:id"
           element={
             <PrivateRoute>
@@ -47,10 +56,50 @@ function App() {
           }
         />
         <Route
+          path="/projects"
+          element={
+            <PrivateRoute>
+              <ResourceList />
+            </PrivateRoute>
+          }
+        />
+        <Route
           path="/projects/compare"
           element={
             <PrivateRoute>
               <ProjectComparison />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/networks"
+          element={
+            <PrivateRoute>
+              <ResourceList />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/hypervisors"
+          element={
+            <PrivateRoute>
+              <ResourceList />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/flavors"
+          element={
+            <PrivateRoute>
+              <ResourceList />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/volumes"
+          element={
+            <PrivateRoute>
+              <ResourceList />
             </PrivateRoute>
           }
         />
