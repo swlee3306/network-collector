@@ -240,6 +240,7 @@ func (a *Analyzer) createOrUpdateNode(nodeType models.TopologyNodeType, id, name
 			OpenStackID: openstackID,
 			Name:        name,
 			IsAccessible: true,
+			Metadata:    "{}", // Default to empty JSON object instead of empty string
 		}
 
 		// Set appropriate foreign key based on node type
@@ -259,8 +260,16 @@ func (a *Analyzer) createOrUpdateNode(nodeType models.TopologyNodeType, id, name
 
 	// Update metadata
 	if metadata != nil {
-		metadataJSON, _ := json.Marshal(metadata)
-		node.Metadata = string(metadataJSON)
+		metadataJSON, err := json.Marshal(metadata)
+		if err == nil {
+			node.Metadata = string(metadataJSON)
+		} else {
+			// If marshaling fails, use empty JSON object
+			node.Metadata = "{}"
+		}
+	} else if node.Metadata == "" {
+		// Ensure metadata is never empty string (must be valid JSON or NULL)
+		node.Metadata = "{}"
 	}
 
 	if err := a.repository.UpsertTopologyNode(node); err != nil {
@@ -280,12 +289,21 @@ func (a *Analyzer) createOrUpdateEdge(sourceID, targetID string, edgeType string
 			SourceNodeID: sourceID,
 			TargetNodeID: targetID,
 			EdgeType:     edgeType,
+			Metadata:     "{}", // Default to empty JSON object instead of empty string
 		}
 	}
 
 	if metadata != nil {
-		metadataJSON, _ := json.Marshal(metadata)
-		edge.Metadata = string(metadataJSON)
+		metadataJSON, err := json.Marshal(metadata)
+		if err == nil {
+			edge.Metadata = string(metadataJSON)
+		} else {
+			// If marshaling fails, use empty JSON object
+			edge.Metadata = "{}"
+		}
+	} else if edge.Metadata == "" {
+		// Ensure metadata is never empty string (must be valid JSON or NULL)
+		edge.Metadata = "{}"
 	}
 
 	return a.repository.UpsertTopologyEdge(edge)
