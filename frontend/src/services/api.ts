@@ -43,8 +43,15 @@ apiClient.interceptors.response.use(
 export const authAPI = {
   login: async (username: string, password: string) => {
     const response = await apiClient.post('/auth/login', { username, password });
-    if (response.data.token) {
-      localStorage.setItem('auth_token', response.data.token);
+    // Log response for debugging
+    console.log('Login response:', response.data);
+    // Check both response.data.token and response.data.data.token
+    const token = response.data.token || response.data.data?.token;
+    if (token) {
+      localStorage.setItem('auth_token', token);
+      console.log('Token saved to localStorage');
+    } else {
+      console.error('No token in login response:', response.data);
     }
     return response.data;
   },

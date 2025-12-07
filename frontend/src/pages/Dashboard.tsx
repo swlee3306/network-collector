@@ -83,7 +83,8 @@ const Dashboard: React.FC = () => {
       // Calculate status
       const activeInstances = instances.filter((i: any) => i.status === 'ACTIVE').length;
       const activeNetworks = networks.filter((n: any) => n.status === 'ACTIVE').length;
-      const upHypervisors = hypervisors.filter((h: any) => h.status === 'up').length;
+      // Hypervisor state field is "state" not "status" - state can be "up" or "down"
+      const upHypervisors = hypervisors.filter((h: any) => h.state === 'up').length;
 
       setStatus({
         instances: { active: activeInstances, total: instances.length },
