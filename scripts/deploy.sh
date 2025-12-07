@@ -1,7 +1,15 @@
 #!/bin/bash
 
 # OpenStack Monitoring System 배포 스크립트
-# 사용법: ./scripts/deploy.sh [k8s|helm]
+# 사용법: 
+#   ./scripts/deploy.sh [k8s|helm] [namespace]
+#   ENV_FILE=/path/to/.env ./scripts/deploy.sh [k8s|helm] [namespace]
+#
+# 환경변수 파일 사용:
+#   1. .env.example을 .env로 복사: cp .env.example .env
+#   2. .env 파일에 실제 값 입력
+#   3. ./scripts/deploy.sh 실행 (자동으로 .env 파일 읽음)
+#   4. 또는 ENV_FILE=/path/to/.env ./scripts/deploy.sh로 다른 파일 지정
 
 set -e
 
@@ -55,24 +63,128 @@ check_prerequisites() {
     log_info "전제 조건 확인 완료"
 }
 
+# 환경변수 파일 읽기
+load_env_file() {
+    local env_file="${1:-.env}"
+    
+    # 절대 경로 또는 상대 경로 처리
+    if [ ! -f "$env_file" ]; then
+        # 프로젝트 루트에서 찾기
+        env_file="$PROJECT_ROOT/$env_file"
+    fi
+    
+    if [ ! -f "$env_file" ]; then
+        return 1
+    fi
+    
+    log_info "환경변수 파일 읽기: $env_file"
+    
+    # .env 파일 읽기 (주석과 빈 줄 제외)
+    while IFS= read -r line || [ -n "$line" ]; do
+        # 주석과 빈 줄 건너뛰기
+        line=$(echo "$line" | sed 's/#.*$//')
+        line=$(echo "$line" | xargs)
+        
+        if [ -z "$line" ]; then
+            continue
+        fi
+        
+        # KEY=VALUE 형식 파싱
+        if [[ "$line" =~ ^([^=]+)=(.*)$ ]]; then
+            key="${BASH_REMATCH[1]}"
+            value="${BASH_REMATCH[2]}"
+            
+            # 앞뒤 공백 제거
+            key=$(echo "$key" | xargs)
+            value=$(echo "$value" | xargs)
+            
+            # 따옴표 제거 (있는 경우)
+            value=$(echo "$value" | sed "s/^['\"]//; s/['\"]\$//")
+            
+            # 환경변수로 export
+            export "$key=$value"
+        fi
+    done < "$env_file"
+    
+    return 0
+}
+
 # Secret 값 입력 받기
 get_secrets() {
+    # 환경변수 파일 경로 확인
+    ENV_FILE="${ENV_FILE:-.env}"
+    
+    # 환경변수 파일이 있으면 읽기
+    if load_env_file "$ENV_FILE"; then
+        log_info "환경변수 파일에서 설정을 로드했습니다."
+        
+        # 필수 값 확인
+        if [ -z "$DB_PASSWORD" ] || [ -z "$OPENSTACK_PASSWORD" ] || [ -z "$OPENSTACK_PROJECT_ID" ] || [ -z "$JWT_SECRET" ] || [ -z "$AUTH_TOKEN" ]; then
+            log_warn "환경변수 파일에 일부 필수 값이 없습니다. 나머지는 입력을 받습니다."
+        else
+            log_info "모든 필수 환경변수가 파일에서 로드되었습니다."
+            # 기본값 설정
+            OPENSTACK_AUTH_URL=${OPENSTACK_AUTH_URL:-http://keystone:5000/v3}
+            OPENSTACK_USERNAME=${OPENSTACK_USERNAME:-admin}
+            return 0
+        fi
+    else
+        log_info "환경변수 파일을 찾을 수 없습니다. 수동 입력을 진행합니다."
+        log_info "환경변수 파일을 사용하려면: ENV_FILE=/path/to/.env ./scripts/deploy.sh"
+    fi
+    
+    # 환경변수 파일에 없는 값만 입력 받기
     log_info "Secret 값 입력 중..."
     
-    read -sp "DB_PASSWORD: " DB_PASSWORD
-    echo
-    read -p "OPENSTACK_AUTH_URL [http://keystone:5000/v3]: " OPENSTACK_AUTH_URL
-    OPENSTACK_AUTH_URL=${OPENSTACK_AUTH_URL:-http://keystone:5000/v3}
-    read -p "OPENSTACK_USERNAME [admin]: " OPENSTACK_USERNAME
-    OPENSTACK_USERNAME=${OPENSTACK_USERNAME:-admin}
-    read -sp "OPENSTACK_PASSWORD: " OPENSTACK_PASSWORD
-    echo
-    read -p "OPENSTACK_PROJECT_ID: " OPENSTACK_PROJECT_ID
-    read -sp "JWT_SECRET: " JWT_SECRET
-    echo
-    read -sp "AUTH_TOKEN: " AUTH_TOKEN
-    echo
+    if [ -z "$DB_PASSWORD" ]; then
+        read -sp "DB_PASSWORD: " DB_PASSWORD
+        echo
+    else
+        log_info "DB_PASSWORD: [파일에서 로드됨]"
+    fi
     
+    if [ -z "$OPENSTACK_AUTH_URL" ]; then
+        read -p "OPENSTACK_AUTH_URL [http://keystone:5000/v3]: " OPENSTACK_AUTH_URL
+        OPENSTACK_AUTH_URL=${OPENSTACK_AUTH_URL:-http://keystone:5000/v3}
+    else
+        log_info "OPENSTACK_AUTH_URL: $OPENSTACK_AUTH_URL"
+    fi
+    
+    if [ -z "$OPENSTACK_USERNAME" ]; then
+        read -p "OPENSTACK_USERNAME [admin]: " OPENSTACK_USERNAME
+        OPENSTACK_USERNAME=${OPENSTACK_USERNAME:-admin}
+    else
+        log_info "OPENSTACK_USERNAME: $OPENSTACK_USERNAME"
+    fi
+    
+    if [ -z "$OPENSTACK_PASSWORD" ]; then
+        read -sp "OPENSTACK_PASSWORD: " OPENSTACK_PASSWORD
+        echo
+    else
+        log_info "OPENSTACK_PASSWORD: [파일에서 로드됨]"
+    fi
+    
+    if [ -z "$OPENSTACK_PROJECT_ID" ]; then
+        read -p "OPENSTACK_PROJECT_ID: " OPENSTACK_PROJECT_ID
+    else
+        log_info "OPENSTACK_PROJECT_ID: $OPENSTACK_PROJECT_ID"
+    fi
+    
+    if [ -z "$JWT_SECRET" ]; then
+        read -sp "JWT_SECRET: " JWT_SECRET
+        echo
+    else
+        log_info "JWT_SECRET: [파일에서 로드됨]"
+    fi
+    
+    if [ -z "$AUTH_TOKEN" ]; then
+        read -sp "AUTH_TOKEN: " AUTH_TOKEN
+        echo
+    else
+        log_info "AUTH_TOKEN: [파일에서 로드됨]"
+    fi
+    
+    # 최종 검증
     if [ -z "$DB_PASSWORD" ] || [ -z "$OPENSTACK_PASSWORD" ] || [ -z "$OPENSTACK_PROJECT_ID" ] || [ -z "$JWT_SECRET" ] || [ -z "$AUTH_TOKEN" ]; then
         log_error "필수 Secret 값이 입력되지 않았습니다."
         exit 1
