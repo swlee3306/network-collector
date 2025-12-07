@@ -244,17 +244,64 @@ func (a *Analyzer) createOrUpdateNode(nodeType models.TopologyNodeType, id, name
 		}
 
 		// Set appropriate foreign key based on node type
+		// Use pointers to allow NULL values for fields not used by this node type
 		switch nodeType {
 		case models.NodeTypeVM:
-			node.InstanceID = id
+			if id != "" {
+				node.InstanceID = &id
+			}
 		case models.NodeTypePort:
-			node.PortID = id
+			if id != "" {
+				node.PortID = &id
+			}
 		case models.NodeTypeNetwork:
-			node.NetworkID = id
+			if id != "" {
+				node.NetworkID = &id
+			}
 		case models.NodeTypeRouter:
-			node.RouterID = id
+			if id != "" {
+				node.RouterID = &id
+			}
 		case models.NodeTypeHost:
-			node.HypervisorID = id
+			if id != "" {
+				node.HypervisorID = &id
+			}
+		}
+	} else {
+		// Node exists - update fields and ensure only the correct foreign key is set
+		node.NodeType = nodeType
+		node.OpenStackID = openstackID
+		node.Name = name
+		
+		// Clear all foreign key fields first, then set only the one for this node type
+		node.InstanceID = nil
+		node.PortID = nil
+		node.NetworkID = nil
+		node.RouterID = nil
+		node.HypervisorID = nil
+		
+		// Set appropriate foreign key based on node type
+		switch nodeType {
+		case models.NodeTypeVM:
+			if id != "" {
+				node.InstanceID = &id
+			}
+		case models.NodeTypePort:
+			if id != "" {
+				node.PortID = &id
+			}
+		case models.NodeTypeNetwork:
+			if id != "" {
+				node.NetworkID = &id
+			}
+		case models.NodeTypeRouter:
+			if id != "" {
+				node.RouterID = &id
+			}
+		case models.NodeTypeHost:
+			if id != "" {
+				node.HypervisorID = &id
+			}
 		}
 	}
 

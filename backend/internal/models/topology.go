@@ -24,11 +24,11 @@ type TopologyNode struct {
 	NodeType     TopologyNodeType `gorm:"type:varchar(20);not null;index" json:"node_type"`
 	OpenStackID  string          `gorm:"type:varchar(255);index" json:"openstack_id"`
 	Name         string          `gorm:"type:varchar(255);not null" json:"name"`
-	InstanceID   string          `gorm:"type:char(36);index" json:"instance_id"`
-	PortID       string          `gorm:"type:char(36);index" json:"port_id"`
-	NetworkID    string          `gorm:"type:char(36);index" json:"network_id"`
-	RouterID     string          `gorm:"type:char(36);index" json:"router_id"`
-	HypervisorID string          `gorm:"type:char(36);index" json:"hypervisor_id"`
+	InstanceID   *string         `gorm:"type:char(36);index" json:"instance_id"` // Nullable - only set for VM nodes
+	PortID       *string         `gorm:"type:char(36);index" json:"port_id"` // Nullable - only set for Port nodes
+	NetworkID    *string         `gorm:"type:char(36);index" json:"network_id"` // Nullable - only set for Network nodes
+	RouterID     *string         `gorm:"type:char(36);index" json:"router_id"` // Nullable - only set for Router nodes
+	HypervisorID *string         `gorm:"type:char(36);index" json:"hypervisor_id"` // Nullable - only set for Host nodes
 	Metadata     string          `gorm:"type:json" json:"metadata"` // JSON object
 	IsAccessible bool            `gorm:"default:true" json:"is_accessible"`
 	CreatedAt    time.Time       `json:"created_at"`

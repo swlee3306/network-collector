@@ -348,6 +348,25 @@ func (r *Repository) SaveHypervisorMetrics(metrics *models.HypervisorMetrics) er
 // UpsertTopologyNode creates or updates a topology node
 func (r *Repository) UpsertTopologyNode(node *models.TopologyNode) error {
 	node.CollectedAt = time.Now()
+	
+	// Ensure empty strings are converted to NULL for pointer fields
+	// This prevents foreign key constraint violations
+	if node.InstanceID != nil && *node.InstanceID == "" {
+		node.InstanceID = nil
+	}
+	if node.PortID != nil && *node.PortID == "" {
+		node.PortID = nil
+	}
+	if node.NetworkID != nil && *node.NetworkID == "" {
+		node.NetworkID = nil
+	}
+	if node.RouterID != nil && *node.RouterID == "" {
+		node.RouterID = nil
+	}
+	if node.HypervisorID != nil && *node.HypervisorID == "" {
+		node.HypervisorID = nil
+	}
+	
 	return r.db.Save(node).Error
 }
 
