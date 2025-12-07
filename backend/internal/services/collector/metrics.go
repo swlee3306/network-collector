@@ -65,14 +65,22 @@ func (c *MetricsCollector) collectInstanceMetric(instance models.Instance) error
 	// Extract metrics from server status
 	// Note: OpenStack Nova API doesn't provide detailed metrics directly
 	// In production, you would use Ceilometer or Gnocchi for metrics
-	// For now, we'll collect basic status information
+	// For now, we'll collect basic information from flavor and status
+
+	var memoryTotalMB int64 = 0
+	if instance.FlavorID != "" {
+		flavor, err := c.repository.GetFlavorByID(instance.FlavorID)
+		if err == nil && flavor != nil {
+			memoryTotalMB = int64(flavor.RAM) // Flavor RAM is in MB
+		}
+	}
 
 	metrics := &models.InstanceMetrics{
 		InstanceID:      instance.ID,
 		Timestamp:       time.Now(),
 		CPUUsagePercent: 0, // Would be collected from Ceilometer/Gnocchi
 		MemoryUsageMB:   0, // Would be collected from Ceilometer/Gnocchi
-		MemoryTotalMB:   0, // Would be collected from Ceilometer/Gnocchi
+		MemoryTotalMB:   memoryTotalMB, // From flavor
 		DiskReadBytes:   0, // Would be collected from Ceilometer/Gnocchi
 		DiskWriteBytes:  0, // Would be collected from Ceilometer/Gnocchi
 		NetworkRxBytes:  0, // Would be collected from Ceilometer/Gnocchi
@@ -115,14 +123,50 @@ func (c *MetricsCollector) CollectNetworkMetrics() error {
 // collectNetworkMetric collects metrics for a single network
 func (c *MetricsCollector) collectNetworkMetric(network models.Network) error {
 	// Network metrics would typically come from Neutron agents or monitoring tools
-	// For now, we'll create a basic metrics entry
+	// For now, we'll calculate basic metrics from available data
+
+	// Get network with ports to count connected VMs
+	networkWithPorts, err := c.repository.GetNetwork(network.ID)
+	if err != nil {
+		log.Printf("Failed to get network with ports: %v", err)
+		networkWithPorts = &network
+	}
+
+	// Count connected VMs by checking ports with device_owner = "compute:nova"
+	connectedVMsCount := 0
+	vmInstanceIDs := make(map[string]bool)
+	
+	if networkWithPorts != nil {
+		for _, port := range networkWithPorts.Ports {
+			// Ports with device_owner starting with "compute:" are VM interfaces
+			if port.DeviceOwner != "" && (port.DeviceOwner == "compute:nova" || 
+				(len(port.DeviceOwner) > 8 && port.DeviceOwner[:8] == "compute:")) {
+				// Try to find instance by device_id (could be OpenStack ID or internal ID)
+				if port.DeviceID != nil && *port.DeviceID != "" {
+					// Check if we've already counted this instance
+					if !vmInstanceIDs[*port.DeviceID] {
+						// Try to find instance by OpenStack ID first
+						instance, err := c.repository.GetInstanceByOpenStackID(*port.DeviceID)
+						if err != nil {
+							// Try by internal ID
+							instance, err = c.repository.GetInstanceByID(*port.DeviceID)
+						}
+						if err == nil && instance != nil {
+							vmInstanceIDs[instance.ID] = true
+							connectedVMsCount++
+						}
+					}
+				}
+			}
+		}
+	}
 
 	metrics := &models.NetworkMetrics{
 		NetworkID:         network.ID,
 		Timestamp:         time.Now(),
 		TotalBytes:        0, // Would be collected from monitoring tools
 		PacketsDropped:    0, // Would be collected from monitoring tools
-		ConnectedVMsCount: 0, // Would be calculated from connected instances
+		ConnectedVMsCount: connectedVMsCount, // Calculated from connected instances
 	}
 
 	return c.repository.SaveNetworkMetrics(metrics)
