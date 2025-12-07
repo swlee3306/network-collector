@@ -522,13 +522,13 @@ test_frontend_pages() {
     )
     
     for page_info in "${PAGES[@]}"; do
-        PATH=$(echo "$page_info" | cut -d':' -f1)
+        PAGE_PATH=$(echo "$page_info" | cut -d':' -f1)
         PAGE_NAME=$(echo "$page_info" | cut -d':' -f2)
         
         log_test "${PAGE_NAME} 페이지 접근 테스트"
         
         RESPONSE=$(curl -s -w "\n%{http_code}" \
-            -L "${FRONTEND_URL}${PATH}" 2>/dev/null)
+            -L "${FRONTEND_URL}${PAGE_PATH}" 2>/dev/null)
         
         HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
         BODY=$(echo "$RESPONSE" | sed '$d')
