@@ -29,12 +29,28 @@ const TopologyViewer: React.FC<TopologyViewerProps> = ({
   const [highlightedPath, setHighlightedPath] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    // Don't proceed if no resource ID is provided
+    if (!instanceId && !hostId && !networkId) {
+      console.log('TopologyViewer: No resource ID provided');
+      setLoading(false);
+      setError('No resource ID provided');
+      return;
+    }
 
-    // Initialize Cytoscape
-    const cy = cytoscape({
-      container: containerRef.current,
-      elements: [],
+    // Initialize Cytoscape - container will be ready after first render
+    let cy: Core | null = null;
+    
+    const initializeCytoscape = () => {
+      if (!containerRef.current) {
+        console.warn('TopologyViewer: Container not ready yet');
+        return null;
+      }
+
+      console.log('TopologyViewer: Initializing Cytoscape with container:', containerRef.current);
+
+      return cytoscape({
+        container: containerRef.current,
+        elements: [],
       style: [
         {
           selector: 'node',
@@ -140,16 +156,15 @@ const TopologyViewer: React.FC<TopologyViewerProps> = ({
           },
         },
       ],
-      layout: {
-        name: 'breadthfirst',
-        directed: true,
-        spacingFactor: 1.5,
-      },
-    });
+        layout: {
+          name: 'breadthfirst',
+          directed: true,
+          spacingFactor: 1.5,
+        },
+      });
+    };
 
-    cyRef.current = cy;
-
-    // Load topology data
+    // Load topology data first, then initialize Cytoscape
     const loadTopology = async () => {
       try {
         setLoading(true);
@@ -177,84 +192,108 @@ const TopologyViewer: React.FC<TopologyViewerProps> = ({
         const data: TopologyData = response.data.data;
         console.log('Topology data:', data);
 
-        // Transform data for Cytoscape
-        const elements: any[] = [];
-
-        // Add nodes
-        data.nodes.forEach((node: any) => {
-          elements.push({
-            data: {
-              id: node.id,
-              label: node.name || node.id,
-              type: node.node_type,
-              accessible: node.is_accessible,
-            },
-          });
-        });
-
-        // Add edges
-        data.edges.forEach((edge: any) => {
-          elements.push({
-            data: {
-              id: edge.id,
-              source: edge.source_node_id,
-              target: edge.target_node_id,
-              type: edge.edge_type,
-            },
-          });
-        });
-
-        // Update graph
-        cy.elements().remove();
-        cy.add(elements);
-
-        // Apply layout
-        cy.layout({
-          name: 'breadthfirst',
-          directed: true,
-          spacingFactor: 1.5,
-        }).run();
-
-        // Node click handler
-        cy.on('tap', 'node', (evt) => {
-          const node = evt.target;
-          setSelectedNode({
-            id: node.id(),
-            label: node.data('label'),
-            type: node.data('type'),
-            accessible: node.data('accessible'),
-          });
-
-          // Highlight connected edges
-          const connectedEdges = node.connectedEdges();
-          cy.elements().removeClass('highlighted');
-          node.addClass('highlighted');
-          connectedEdges.addClass('highlighted');
-        });
-
-        // Edge click handler
-        cy.on('tap', 'edge', (evt) => {
-          const edge = evt.target;
-          cy.elements().removeClass('highlighted');
-          edge.addClass('highlighted');
-          edge.source().addClass('highlighted');
-          edge.target().addClass('highlighted');
-        });
-
-        // Background click - deselect
-        cy.on('tap', (evt) => {
-          if (evt.target === cy) {
-            cy.elements().removeClass('highlighted');
-            setSelectedNode(null);
-            setHighlightedPath([]);
+        // Initialize Cytoscape if not already initialized
+        if (!cy) {
+          cy = initializeCytoscape();
+          if (!cy) {
+            // Retry after a short delay
+            setTimeout(() => {
+              cy = initializeCytoscape();
+              if (cy) {
+                cyRef.current = cy;
+                updateGraph(cy, data);
+              } else {
+                setError('Failed to initialize graph container');
+                setLoading(false);
+              }
+            }, 100);
+            return;
           }
-        });
+          cyRef.current = cy;
+        }
 
-        // Zoom and pan controls
-        cy.userPanningEnabled(true);
-        cy.userZoomingEnabled(true);
-        cy.boxSelectionEnabled(true);
+        // Helper function to update graph
+        const updateGraph = (cyInstance: Core, data: TopologyData) => {
+          // Transform data for Cytoscape
+          const elements: any[] = [];
 
+          // Add nodes
+          data.nodes.forEach((node: any) => {
+            elements.push({
+              data: {
+                id: node.id,
+                label: node.name || node.id,
+                type: node.node_type,
+                accessible: node.is_accessible,
+              },
+            });
+          });
+
+          // Add edges
+          data.edges.forEach((edge: any) => {
+            elements.push({
+              data: {
+                id: edge.id,
+                source: edge.source_node_id,
+                target: edge.target_node_id,
+                type: edge.edge_type,
+              },
+            });
+          });
+
+          // Update graph
+          cyInstance.elements().remove();
+          cyInstance.add(elements);
+
+          // Apply layout
+          cyInstance.layout({
+            name: 'breadthfirst',
+            directed: true,
+            spacingFactor: 1.5,
+          }).run();
+
+          // Node click handler
+          cyInstance.on('tap', 'node', (evt) => {
+            const node = evt.target;
+            setSelectedNode({
+              id: node.id(),
+              label: node.data('label'),
+              type: node.data('type'),
+              accessible: node.data('accessible'),
+            });
+
+            // Highlight connected edges
+            const connectedEdges = node.connectedEdges();
+            cyInstance.elements().removeClass('highlighted');
+            node.addClass('highlighted');
+            connectedEdges.addClass('highlighted');
+          });
+
+          // Edge click handler
+          cyInstance.on('tap', 'edge', (evt) => {
+            const edge = evt.target;
+            cyInstance.elements().removeClass('highlighted');
+            edge.addClass('highlighted');
+            edge.source().addClass('highlighted');
+            edge.target().addClass('highlighted');
+          });
+
+          // Background click - deselect
+          cyInstance.on('tap', (evt) => {
+            if (evt.target === cyInstance) {
+              cyInstance.elements().removeClass('highlighted');
+              setSelectedNode(null);
+              setHighlightedPath([]);
+            }
+          });
+
+          // Zoom and pan controls
+          cyInstance.userPanningEnabled(true);
+          cyInstance.userZoomingEnabled(true);
+          cyInstance.boxSelectionEnabled(true);
+        };
+
+        updateGraph(cy, data);
         setLoading(false);
       } catch (err: any) {
         console.error('Topology loading error:', err);
