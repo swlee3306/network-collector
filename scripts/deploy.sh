@@ -235,7 +235,12 @@ deploy_k8s() {
     kubectl apply -f backend/deployments/k8s/frontend/deployment.yaml -n "$NAMESPACE"
     
     # Ingress 배포 (선택적)
-    read -p "Ingress를 배포하시겠습니까? (y/N): " DEPLOY_INGRESS
+    if [ -z "$DEPLOY_INGRESS" ]; then
+        read -p "Ingress를 배포하시겠습니까? (y/N): " DEPLOY_INGRESS
+    else
+        log_info "DEPLOY_INGRESS: $DEPLOY_INGRESS (환경변수 파일에서 로드됨)"
+    fi
+    
     if [ "$DEPLOY_INGRESS" = "y" ] || [ "$DEPLOY_INGRESS" = "Y" ]; then
         log_info "Ingress 배포 중..."
         kubectl apply -f backend/deployments/k8s/ingress.yaml -n "$NAMESPACE"

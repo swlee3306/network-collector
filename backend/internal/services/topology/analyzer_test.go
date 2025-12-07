@@ -100,20 +100,21 @@ func TestBuildTopologyForVM(t *testing.T) {
 			instanceID: "instance-1",
 			setupMocks: func(m *MockRepository) {
 				instance := &models.Instance{
-					ID:          "instance-1",
-					OpenStackID: "os-instance-1",
-					Name:        "test-vm",
-					Status:      "ACTIVE",
+					ID:           "instance-1",
+					OpenStackID:  "os-instance-1",
+					Name:         "test-vm",
+					Status:       "ACTIVE",
 					HypervisorID: "hypervisor-1",
 				}
 				m.On("GetInstanceByID", "instance-1").Return(instance, nil)
 
+				deviceID := "os-instance-1"
 				port := &models.Port{
 					ID:          "port-1",
 					OpenStackID: "os-port-1",
 					NetworkID:   "network-1",
-					DeviceID:   "os-instance-1",
-					Status:     "ACTIVE",
+					DeviceID:    &deviceID,
+					Status:      "ACTIVE",
 				}
 				m.On("GetPortsByOpenStackDeviceID", "os-instance-1").Return([]*models.Port{port}, nil)
 
@@ -184,4 +185,3 @@ func TestNewAnalyzer(t *testing.T) {
 	// In a real implementation, we'd use dependency injection with interfaces
 	t.Skip("Requires repository interface refactoring")
 }
-
