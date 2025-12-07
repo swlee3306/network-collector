@@ -324,7 +324,7 @@ const ResourceDetail: React.FC = () => {
   const renderActions = () => {
     if (!resource) return null;
 
-    const actions: JSX.Element[] = [];
+    const actions: React.ReactElement[] = [];
 
     // Topology actions
     if (resourceType === 'instances') {
