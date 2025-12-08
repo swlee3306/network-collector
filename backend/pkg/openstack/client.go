@@ -111,9 +111,13 @@ func (c *Client) RefreshToken() error {
 
 // Nova API wrappers
 
-// ListServers lists all servers
+// ListServers lists all servers from all projects
+// AllTenants is set to true to collect instances from all projects, not just the authenticated project
 func (c *Client) ListServers() ([]servers.Server, error) {
-	allPages, err := servers.List(c.nova, servers.ListOpts{}).AllPages()
+	opts := servers.ListOpts{
+		AllTenants: true, // List servers from all projects
+	}
+	allPages, err := servers.List(c.nova, opts).AllPages()
 	if err != nil {
 		return nil, errors.NewOpenStackError("nova", "list_servers", err, true)
 	}
@@ -167,9 +171,12 @@ func (c *Client) ListFlavors() ([]flavors.Flavor, error) {
 
 // Neutron API wrappers
 
-// ListNetworks lists all networks
+// ListNetworks lists all networks from all projects
+// Note: Neutron doesn't have AllTenants option, but omitting TenantID allows admin users to see all projects
 func (c *Client) ListNetworks() ([]networks.Network, error) {
-	allPages, err := networks.List(c.neutron, networks.ListOpts{}).AllPages()
+	// Empty ListOpts means no tenant filtering - admin users will see all networks
+	opts := networks.ListOpts{}
+	allPages, err := networks.List(c.neutron, opts).AllPages()
 	if err != nil {
 		return nil, errors.NewOpenStackError("neutron", "list_networks", err, true)
 	}
@@ -197,9 +204,12 @@ func (c *Client) ListPorts(opts ports.ListOpts) ([]ports.Port, error) {
 	return allPorts, nil
 }
 
-// ListRouters lists all routers
+// ListRouters lists all routers from all projects
+// Note: Neutron doesn't have AllTenants option, but omitting TenantID allows admin users to see all projects
 func (c *Client) ListRouters() ([]routers.Router, error) {
-	allPages, err := routers.List(c.neutron, routers.ListOpts{}).AllPages()
+	// Empty ListOpts means no tenant filtering - admin users will see all routers
+	opts := routers.ListOpts{}
+	allPages, err := routers.List(c.neutron, opts).AllPages()
 	if err != nil {
 		return nil, errors.NewOpenStackError("neutron", "list_routers", err, true)
 	}
@@ -214,9 +224,13 @@ func (c *Client) ListRouters() ([]routers.Router, error) {
 
 // Cinder API wrappers
 
-// ListVolumes lists all volumes
+// ListVolumes lists all volumes from all projects
+// AllTenants is set to true to collect volumes from all projects, not just the authenticated project
 func (c *Client) ListVolumes() ([]volumes.Volume, error) {
-	allPages, err := volumes.List(c.cinder, volumes.ListOpts{}).AllPages()
+	opts := volumes.ListOpts{
+		AllTenants: true, // List volumes from all projects
+	}
+	allPages, err := volumes.List(c.cinder, opts).AllPages()
 	if err != nil {
 		return nil, errors.NewOpenStackError("cinder", "list_volumes", err, true)
 	}

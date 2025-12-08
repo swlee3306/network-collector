@@ -95,7 +95,9 @@ func (c *NetworkCollector) saveNetwork(network networks.Network) error {
 }
 
 // CollectPorts collects all ports from OpenStack
+// Note: Empty ListOpts (no TenantID filter) allows admin users to see all ports from all projects
 func (c *NetworkCollector) CollectPorts() error {
+	// Empty ListOpts means no tenant filtering - admin users will see all ports
 	opts := ports.ListOpts{}
 	openstackPorts, err := c.client.ListPorts(opts)
 	if err != nil {
