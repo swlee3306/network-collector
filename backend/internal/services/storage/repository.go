@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -109,14 +110,76 @@ func (r *Repository) GetVolumesByProjectID(projectID string) ([]models.Volume, e
 	return volumes, err
 }
 
-// DeleteInstancesNotIn deletes instances that are not in the provided OpenStack ID list
-func (r *Repository) DeleteInstancesNotIn(openstackIDs []string) error {
-	if len(openstackIDs) == 0 {
-		// If no instances in OpenStack, delete all
-		result := r.db.Delete(&models.Instance{})
-		return result.Error
+// deleteTopologyNodesAndEdges deletes topology nodes and their associated edges
+// This is a helper function to ensure edges are deleted before nodes
+func (r *Repository) deleteTopologyNodesAndEdges(nodeIDs []string) error {
+	if len(nodeIDs) == 0 {
+		return nil
 	}
-	result := r.db.Where("open_stack_id NOT IN ?", openstackIDs).Delete(&models.Instance{})
+
+	// First, delete edges that reference these nodes (as source or target)
+	if err := r.db.Where("source_node_id IN ? OR target_node_id IN ?", nodeIDs, nodeIDs).Delete(&models.TopologyEdge{}).Error; err != nil {
+		return fmt.Errorf("failed to delete topology edges: %w", err)
+	}
+
+	// Then, delete the topology nodes themselves
+	if err := r.db.Where("id IN ?", nodeIDs).Delete(&models.TopologyNode{}).Error; err != nil {
+		return fmt.Errorf("failed to delete topology nodes: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteInstancesNotIn deletes instances that are not in the provided OpenStack ID list
+// Also deletes related child records (metrics, topology_nodes) and updates volumes
+func (r *Repository) DeleteInstancesNotIn(openstackIDs []string) error {
+	// First, find instances to be deleted
+	var instancesToDelete []models.Instance
+	query := r.db
+	if len(openstackIDs) == 0 {
+		query = query.Find(&instancesToDelete)
+	} else {
+		query = query.Where("open_stack_id NOT IN ?", openstackIDs).Find(&instancesToDelete)
+	}
+	if query.Error != nil {
+		return query.Error
+	}
+
+	if len(instancesToDelete) == 0 {
+		return nil
+	}
+
+	// Get instance IDs
+	instanceIDs := make([]string, 0, len(instancesToDelete))
+	for _, i := range instancesToDelete {
+		instanceIDs = append(instanceIDs, i.ID)
+	}
+
+	// Delete related child records first
+	// 1. Delete instance metrics
+	if err := r.db.Where("instance_id IN ?", instanceIDs).Delete(&models.InstanceMetrics{}).Error; err != nil {
+		return fmt.Errorf("failed to delete instance metrics: %w", err)
+	}
+
+	// 2. Find and delete topology nodes that reference these instances (and their edges)
+	var topologyNodes []models.TopologyNode
+	if err := r.db.Where("instance_id IN ?", instanceIDs).Find(&topologyNodes).Error; err == nil && len(topologyNodes) > 0 {
+		nodeIDs := make([]string, 0, len(topologyNodes))
+		for _, n := range topologyNodes {
+			nodeIDs = append(nodeIDs, n.ID)
+		}
+		if err := r.deleteTopologyNodesAndEdges(nodeIDs); err != nil {
+			return err
+		}
+	}
+
+	// 3. Update volumes that are attached to these instances (set AttachedTo to NULL)
+	if err := r.db.Model(&models.Volume{}).Where("attached_to IN ?", instanceIDs).Update("attached_to", nil).Error; err != nil {
+		return fmt.Errorf("failed to update volumes: %w", err)
+	}
+
+	// Finally, delete the instances themselves
+	result := r.db.Where("id IN ?", instanceIDs).Delete(&models.Instance{})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -127,12 +190,60 @@ func (r *Repository) DeleteInstancesNotIn(openstackIDs []string) error {
 }
 
 // DeleteNetworksNotIn deletes networks that are not in the provided OpenStack ID list
+// Also deletes related child records (metrics, ports, subnets, topology_nodes)
 func (r *Repository) DeleteNetworksNotIn(openstackIDs []string) error {
+	// First, find networks to be deleted
+	var networksToDelete []models.Network
+	query := r.db
 	if len(openstackIDs) == 0 {
-		result := r.db.Delete(&models.Network{})
-		return result.Error
+		query = query.Find(&networksToDelete)
+	} else {
+		query = query.Where("open_stack_id NOT IN ?", openstackIDs).Find(&networksToDelete)
 	}
-	result := r.db.Where("open_stack_id NOT IN ?", openstackIDs).Delete(&models.Network{})
+	if query.Error != nil {
+		return query.Error
+	}
+
+	if len(networksToDelete) == 0 {
+		return nil
+	}
+
+	// Get network IDs
+	networkIDs := make([]string, 0, len(networksToDelete))
+	for _, n := range networksToDelete {
+		networkIDs = append(networkIDs, n.ID)
+	}
+
+	// Delete related child records first
+	// 1. Delete network metrics
+	if err := r.db.Where("network_id IN ?", networkIDs).Delete(&models.NetworkMetrics{}).Error; err != nil {
+		return fmt.Errorf("failed to delete network metrics: %w", err)
+	}
+
+	// 2. Delete ports (they reference networks)
+	if err := r.db.Where("network_id IN ?", networkIDs).Delete(&models.Port{}).Error; err != nil {
+		return fmt.Errorf("failed to delete ports: %w", err)
+	}
+
+	// 3. Delete subnets
+	if err := r.db.Where("network_id IN ?", networkIDs).Delete(&models.Subnet{}).Error; err != nil {
+		return fmt.Errorf("failed to delete subnets: %w", err)
+	}
+
+	// 4. Find and delete topology nodes that reference these networks (and their edges)
+	var topologyNodes []models.TopologyNode
+	if err := r.db.Where("network_id IN ?", networkIDs).Find(&topologyNodes).Error; err == nil && len(topologyNodes) > 0 {
+		nodeIDs := make([]string, 0, len(topologyNodes))
+		for _, n := range topologyNodes {
+			nodeIDs = append(nodeIDs, n.ID)
+		}
+		if err := r.deleteTopologyNodesAndEdges(nodeIDs); err != nil {
+			return err
+		}
+	}
+
+	// Finally, delete the networks themselves
+	result := r.db.Where("id IN ?", networkIDs).Delete(&models.Network{})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -143,12 +254,44 @@ func (r *Repository) DeleteNetworksNotIn(openstackIDs []string) error {
 }
 
 // DeletePortsNotIn deletes ports that are not in the provided OpenStack ID list
+// Also deletes related topology_nodes
 func (r *Repository) DeletePortsNotIn(openstackIDs []string) error {
+	// First, find ports to be deleted
+	var portsToDelete []models.Port
+	query := r.db
 	if len(openstackIDs) == 0 {
-		result := r.db.Delete(&models.Port{})
-		return result.Error
+		query = query.Find(&portsToDelete)
+	} else {
+		query = query.Where("open_stack_id NOT IN ?", openstackIDs).Find(&portsToDelete)
 	}
-	result := r.db.Where("open_stack_id NOT IN ?", openstackIDs).Delete(&models.Port{})
+	if query.Error != nil {
+		return query.Error
+	}
+
+	if len(portsToDelete) == 0 {
+		return nil
+	}
+
+	// Get port IDs
+	portIDs := make([]string, 0, len(portsToDelete))
+	for _, p := range portsToDelete {
+		portIDs = append(portIDs, p.ID)
+	}
+
+	// Find and delete topology nodes that reference these ports (and their edges)
+	var topologyNodes []models.TopologyNode
+	if err := r.db.Where("port_id IN ?", portIDs).Find(&topologyNodes).Error; err == nil && len(topologyNodes) > 0 {
+		nodeIDs := make([]string, 0, len(topologyNodes))
+		for _, n := range topologyNodes {
+			nodeIDs = append(nodeIDs, n.ID)
+		}
+		if err := r.deleteTopologyNodesAndEdges(nodeIDs); err != nil {
+			return err
+		}
+	}
+
+	// Finally, delete the ports themselves
+	result := r.db.Where("id IN ?", portIDs).Delete(&models.Port{})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -159,12 +302,44 @@ func (r *Repository) DeletePortsNotIn(openstackIDs []string) error {
 }
 
 // DeleteRoutersNotIn deletes routers that are not in the provided OpenStack ID list
+// Also deletes related topology_nodes
 func (r *Repository) DeleteRoutersNotIn(openstackIDs []string) error {
+	// First, find routers to be deleted
+	var routersToDelete []models.Router
+	query := r.db
 	if len(openstackIDs) == 0 {
-		result := r.db.Delete(&models.Router{})
-		return result.Error
+		query = query.Find(&routersToDelete)
+	} else {
+		query = query.Where("open_stack_id NOT IN ?", openstackIDs).Find(&routersToDelete)
 	}
-	result := r.db.Where("open_stack_id NOT IN ?", openstackIDs).Delete(&models.Router{})
+	if query.Error != nil {
+		return query.Error
+	}
+
+	if len(routersToDelete) == 0 {
+		return nil
+	}
+
+	// Get router IDs
+	routerIDs := make([]string, 0, len(routersToDelete))
+	for _, rt := range routersToDelete {
+		routerIDs = append(routerIDs, rt.ID)
+	}
+
+	// Find and delete topology nodes that reference these routers (and their edges)
+	var topologyNodes []models.TopologyNode
+	if err := r.db.Where("router_id IN ?", routerIDs).Find(&topologyNodes).Error; err == nil && len(topologyNodes) > 0 {
+		nodeIDs := make([]string, 0, len(topologyNodes))
+		for _, n := range topologyNodes {
+			nodeIDs = append(nodeIDs, n.ID)
+		}
+		if err := r.deleteTopologyNodesAndEdges(nodeIDs); err != nil {
+			return err
+		}
+	}
+
+	// Finally, delete the routers themselves
+	result := r.db.Where("id IN ?", routerIDs).Delete(&models.Router{})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -191,12 +366,107 @@ func (r *Repository) DeleteVolumesNotIn(openstackIDs []string) error {
 }
 
 // DeleteProjectsNotIn deletes projects that are not in the provided OpenStack ID list
+// Also deletes related child records (instances, networks, volumes)
+// Note: This will cascade delete all resources in those projects
 func (r *Repository) DeleteProjectsNotIn(openstackIDs []string) error {
+	// First, find projects to be deleted
+	var projectsToDelete []models.Project
+	query := r.db
 	if len(openstackIDs) == 0 {
-		result := r.db.Delete(&models.Project{})
-		return result.Error
+		query = query.Find(&projectsToDelete)
+	} else {
+		query = query.Where("open_stack_id NOT IN ?", openstackIDs).Find(&projectsToDelete)
 	}
-	result := r.db.Where("open_stack_id NOT IN ?", openstackIDs).Delete(&models.Project{})
+	if query.Error != nil {
+		return query.Error
+	}
+
+	if len(projectsToDelete) == 0 {
+		return nil
+	}
+
+	// Get project IDs
+	projectIDs := make([]string, 0, len(projectsToDelete))
+	for _, p := range projectsToDelete {
+		projectIDs = append(projectIDs, p.ID)
+	}
+
+	// Delete related child records first
+	// 1. Delete instances (and their metrics, topology_nodes will be handled by instance deletion)
+	var instancesToDelete []models.Instance
+	if err := r.db.Where("project_id IN ?", projectIDs).Find(&instancesToDelete).Error; err == nil && len(instancesToDelete) > 0 {
+		instanceIDs := make([]string, 0, len(instancesToDelete))
+		for _, i := range instancesToDelete {
+			instanceIDs = append(instanceIDs, i.ID)
+		}
+		// Delete instance metrics
+		if err := r.db.Where("instance_id IN ?", instanceIDs).Delete(&models.InstanceMetrics{}).Error; err != nil {
+			return fmt.Errorf("failed to delete instance metrics: %w", err)
+		}
+		// Find and delete topology nodes (and their edges)
+		var topologyNodes []models.TopologyNode
+		if err := r.db.Where("instance_id IN ?", instanceIDs).Find(&topologyNodes).Error; err == nil && len(topologyNodes) > 0 {
+			nodeIDs := make([]string, 0, len(topologyNodes))
+			for _, n := range topologyNodes {
+				nodeIDs = append(nodeIDs, n.ID)
+			}
+			if err := r.deleteTopologyNodesAndEdges(nodeIDs); err != nil {
+				return err
+			}
+		}
+		// Update volumes
+		if err := r.db.Model(&models.Volume{}).Where("attached_to IN ?", instanceIDs).Update("attached_to", nil).Error; err != nil {
+			return fmt.Errorf("failed to update volumes: %w", err)
+		}
+		// Delete instances
+		if err := r.db.Where("project_id IN ?", projectIDs).Delete(&models.Instance{}).Error; err != nil {
+			return fmt.Errorf("failed to delete instances: %w", err)
+		}
+	}
+
+	// 2. Delete networks (and their metrics, ports, subnets, topology_nodes)
+	var networksToDelete []models.Network
+	if err := r.db.Where("project_id IN ?", projectIDs).Find(&networksToDelete).Error; err == nil && len(networksToDelete) > 0 {
+		networkIDs := make([]string, 0, len(networksToDelete))
+		for _, n := range networksToDelete {
+			networkIDs = append(networkIDs, n.ID)
+		}
+		// Delete network metrics
+		if err := r.db.Where("network_id IN ?", networkIDs).Delete(&models.NetworkMetrics{}).Error; err != nil {
+			return fmt.Errorf("failed to delete network metrics: %w", err)
+		}
+		// Delete ports
+		if err := r.db.Where("network_id IN ?", networkIDs).Delete(&models.Port{}).Error; err != nil {
+			return fmt.Errorf("failed to delete ports: %w", err)
+		}
+		// Delete subnets
+		if err := r.db.Where("network_id IN ?", networkIDs).Delete(&models.Subnet{}).Error; err != nil {
+			return fmt.Errorf("failed to delete subnets: %w", err)
+		}
+		// Find and delete topology nodes (and their edges)
+		var topologyNodes []models.TopologyNode
+		if err := r.db.Where("network_id IN ?", networkIDs).Find(&topologyNodes).Error; err == nil && len(topologyNodes) > 0 {
+			nodeIDs := make([]string, 0, len(topologyNodes))
+			for _, n := range topologyNodes {
+				nodeIDs = append(nodeIDs, n.ID)
+			}
+			if err := r.deleteTopologyNodesAndEdges(nodeIDs); err != nil {
+				return err
+			}
+		}
+		// Delete networks
+		if err := r.db.Where("project_id IN ?", projectIDs).Delete(&models.Network{}).Error; err != nil {
+			return fmt.Errorf("failed to delete networks: %w", err)
+		}
+	}
+
+	// 3. Delete volumes
+	if err := r.db.Where("project_id IN ?", projectIDs).Delete(&models.Volume{}).Error; err != nil {
+		return fmt.Errorf("failed to delete volumes: %w", err)
+	}
+
+	// Finally, delete the projects themselves
+	result := r.db.Where("id IN ?", projectIDs).Delete(&models.Project{})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -207,12 +477,37 @@ func (r *Repository) DeleteProjectsNotIn(openstackIDs []string) error {
 }
 
 // DeleteFlavorsNotIn deletes flavors that are not in the provided OpenStack ID list
+// Also updates instances that reference these flavors (set FlavorID to NULL)
 func (r *Repository) DeleteFlavorsNotIn(openstackIDs []string) error {
+	// First, find flavors to be deleted
+	var flavorsToDelete []models.Flavor
+	query := r.db
 	if len(openstackIDs) == 0 {
-		result := r.db.Delete(&models.Flavor{})
-		return result.Error
+		query = query.Find(&flavorsToDelete)
+	} else {
+		query = query.Where("open_stack_id NOT IN ?", openstackIDs).Find(&flavorsToDelete)
 	}
-	result := r.db.Where("open_stack_id NOT IN ?", openstackIDs).Delete(&models.Flavor{})
+	if query.Error != nil {
+		return query.Error
+	}
+
+	if len(flavorsToDelete) == 0 {
+		return nil
+	}
+
+	// Get flavor IDs
+	flavorIDs := make([]string, 0, len(flavorsToDelete))
+	for _, f := range flavorsToDelete {
+		flavorIDs = append(flavorIDs, f.ID)
+	}
+
+	// Update instances that reference these flavors (set FlavorID to NULL)
+	if err := r.db.Model(&models.Instance{}).Where("flavor_id IN ?", flavorIDs).Update("flavor_id", nil).Error; err != nil {
+		return fmt.Errorf("failed to update instances: %w", err)
+	}
+
+	// Finally, delete the flavors themselves
+	result := r.db.Where("id IN ?", flavorIDs).Delete(&models.Flavor{})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -223,12 +518,55 @@ func (r *Repository) DeleteFlavorsNotIn(openstackIDs []string) error {
 }
 
 // DeleteHypervisorsNotIn deletes hypervisors that are not in the provided OpenStack ID list
+// Also deletes related child records (metrics, topology_nodes) and updates instances
 func (r *Repository) DeleteHypervisorsNotIn(openstackIDs []string) error {
+	// First, find hypervisors to be deleted
+	var hypervisorsToDelete []models.Hypervisor
+	query := r.db
 	if len(openstackIDs) == 0 {
-		result := r.db.Delete(&models.Hypervisor{})
-		return result.Error
+		query = query.Find(&hypervisorsToDelete)
+	} else {
+		query = query.Where("open_stack_id NOT IN ?", openstackIDs).Find(&hypervisorsToDelete)
 	}
-	result := r.db.Where("open_stack_id NOT IN ?", openstackIDs).Delete(&models.Hypervisor{})
+	if query.Error != nil {
+		return query.Error
+	}
+
+	if len(hypervisorsToDelete) == 0 {
+		return nil
+	}
+
+	// Get hypervisor IDs
+	hypervisorIDs := make([]string, 0, len(hypervisorsToDelete))
+	for _, h := range hypervisorsToDelete {
+		hypervisorIDs = append(hypervisorIDs, h.ID)
+	}
+
+	// Delete related child records first
+	// 1. Delete hypervisor metrics
+	if err := r.db.Where("hypervisor_id IN ?", hypervisorIDs).Delete(&models.HypervisorMetrics{}).Error; err != nil {
+		return fmt.Errorf("failed to delete hypervisor metrics: %w", err)
+	}
+
+	// 2. Find and delete topology nodes that reference these hypervisors (and their edges)
+	var topologyNodes []models.TopologyNode
+	if err := r.db.Where("hypervisor_id IN ?", hypervisorIDs).Find(&topologyNodes).Error; err == nil && len(topologyNodes) > 0 {
+		nodeIDs := make([]string, 0, len(topologyNodes))
+		for _, n := range topologyNodes {
+			nodeIDs = append(nodeIDs, n.ID)
+		}
+		if err := r.deleteTopologyNodesAndEdges(nodeIDs); err != nil {
+			return err
+		}
+	}
+
+	// 3. Update instances that reference these hypervisors (set HypervisorID to NULL)
+	if err := r.db.Model(&models.Instance{}).Where("hypervisor_id IN ?", hypervisorIDs).Update("hypervisor_id", nil).Error; err != nil {
+		return fmt.Errorf("failed to update instances: %w", err)
+	}
+
+	// Finally, delete the hypervisors themselves
+	result := r.db.Where("id IN ?", hypervisorIDs).Delete(&models.Hypervisor{})
 	if result.Error != nil {
 		return result.Error
 	}

@@ -135,6 +135,41 @@ Kubernetes 노드들에 SSH 키를 배포하는 스크립트입니다. `deploy-i
 ./scripts/undeploy.sh helm monitoring
 ```
 
+### check-metrics.sh
+
+메트릭 수집 기능이 정상적으로 동작하는지 확인하는 스크립트입니다.
+
+**사용법:**
+```bash
+# 메트릭 수집 상태 확인
+./scripts/check-metrics.sh
+```
+
+**기능:**
+- 메트릭 테이블 존재 여부 확인
+- 메트릭 데이터 존재 여부 확인
+- 최근 메트릭 상세 정보 조회
+- Collector Pod 로그 확인
+- API 엔드포인트 동작 확인
+
+**예시:**
+```bash
+# 메트릭 수집 상태 확인
+./scripts/check-metrics.sh
+
+# 환경 변수로 데이터베이스 정보 설정
+DB_HOST=mariadb DB_PORT=3306 DB_USER=openstack_monitor DB_PASSWORD=your-password ./scripts/check-metrics.sh
+```
+
+**확인 항목:**
+1. `instance_metrics` 테이블 및 데이터
+2. `network_metrics` 테이블 및 데이터
+3. `hypervisor_metrics` 테이블 및 데이터
+4. Collector Pod의 메트릭 수집 로그
+5. 메트릭 API 엔드포인트 동작
+
+**참고:** 자세한 내용은 `docs/METRICS_COLLECTION.md`를 참조하세요.
+
 ## 전체 배포 워크플로우
 
 ### 로컬 이미지 사용 (imagePullPolicy: Never)
