@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"fmt"
 	"log"
 	"time"
 
@@ -25,16 +24,6 @@ func NewRepository(db *gorm.DB) *Repository {
 // UpsertInstance creates or updates an instance
 func (r *Repository) UpsertInstance(instance *models.Instance) error {
 	instance.CollectedAt = time.Now()
-	
-	// Convert empty strings to NULL for foreign key fields to avoid constraint violations
-	// GORM doesn't automatically convert empty strings to NULL, so we need to handle this
-	// by using raw SQL for fields that are empty strings
-	hypervisorIDValue := instance.HypervisorID
-	if hypervisorIDValue == "" {
-		hypervisorIDValue = "NULL"
-	} else {
-		hypervisorIDValue = fmt.Sprintf("'%s'", hypervisorIDValue)
-	}
 	
 	// Check if instance exists by open_stack_id
 	existing, err := r.GetInstanceByOpenStackID(instance.OpenStackID)
@@ -118,6 +107,135 @@ func (r *Repository) GetVolumesByProjectID(projectID string) ([]models.Volume, e
 	var volumes []models.Volume
 	err := r.db.Where("project_id = ?", projectID).Find(&volumes).Error
 	return volumes, err
+}
+
+// DeleteInstancesNotIn deletes instances that are not in the provided OpenStack ID list
+func (r *Repository) DeleteInstancesNotIn(openstackIDs []string) error {
+	if len(openstackIDs) == 0 {
+		// If no instances in OpenStack, delete all
+		result := r.db.Delete(&models.Instance{})
+		return result.Error
+	}
+	result := r.db.Where("open_stack_id NOT IN ?", openstackIDs).Delete(&models.Instance{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		log.Printf("Deleted %d instances that no longer exist in OpenStack", result.RowsAffected)
+	}
+	return nil
+}
+
+// DeleteNetworksNotIn deletes networks that are not in the provided OpenStack ID list
+func (r *Repository) DeleteNetworksNotIn(openstackIDs []string) error {
+	if len(openstackIDs) == 0 {
+		result := r.db.Delete(&models.Network{})
+		return result.Error
+	}
+	result := r.db.Where("open_stack_id NOT IN ?", openstackIDs).Delete(&models.Network{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		log.Printf("Deleted %d networks that no longer exist in OpenStack", result.RowsAffected)
+	}
+	return nil
+}
+
+// DeletePortsNotIn deletes ports that are not in the provided OpenStack ID list
+func (r *Repository) DeletePortsNotIn(openstackIDs []string) error {
+	if len(openstackIDs) == 0 {
+		result := r.db.Delete(&models.Port{})
+		return result.Error
+	}
+	result := r.db.Where("open_stack_id NOT IN ?", openstackIDs).Delete(&models.Port{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		log.Printf("Deleted %d ports that no longer exist in OpenStack", result.RowsAffected)
+	}
+	return nil
+}
+
+// DeleteRoutersNotIn deletes routers that are not in the provided OpenStack ID list
+func (r *Repository) DeleteRoutersNotIn(openstackIDs []string) error {
+	if len(openstackIDs) == 0 {
+		result := r.db.Delete(&models.Router{})
+		return result.Error
+	}
+	result := r.db.Where("open_stack_id NOT IN ?", openstackIDs).Delete(&models.Router{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		log.Printf("Deleted %d routers that no longer exist in OpenStack", result.RowsAffected)
+	}
+	return nil
+}
+
+// DeleteVolumesNotIn deletes volumes that are not in the provided OpenStack ID list
+func (r *Repository) DeleteVolumesNotIn(openstackIDs []string) error {
+	if len(openstackIDs) == 0 {
+		result := r.db.Delete(&models.Volume{})
+		return result.Error
+	}
+	result := r.db.Where("open_stack_id NOT IN ?", openstackIDs).Delete(&models.Volume{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		log.Printf("Deleted %d volumes that no longer exist in OpenStack", result.RowsAffected)
+	}
+	return nil
+}
+
+// DeleteProjectsNotIn deletes projects that are not in the provided OpenStack ID list
+func (r *Repository) DeleteProjectsNotIn(openstackIDs []string) error {
+	if len(openstackIDs) == 0 {
+		result := r.db.Delete(&models.Project{})
+		return result.Error
+	}
+	result := r.db.Where("open_stack_id NOT IN ?", openstackIDs).Delete(&models.Project{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		log.Printf("Deleted %d projects that no longer exist in OpenStack", result.RowsAffected)
+	}
+	return nil
+}
+
+// DeleteFlavorsNotIn deletes flavors that are not in the provided OpenStack ID list
+func (r *Repository) DeleteFlavorsNotIn(openstackIDs []string) error {
+	if len(openstackIDs) == 0 {
+		result := r.db.Delete(&models.Flavor{})
+		return result.Error
+	}
+	result := r.db.Where("open_stack_id NOT IN ?", openstackIDs).Delete(&models.Flavor{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		log.Printf("Deleted %d flavors that no longer exist in OpenStack", result.RowsAffected)
+	}
+	return nil
+}
+
+// DeleteHypervisorsNotIn deletes hypervisors that are not in the provided OpenStack ID list
+func (r *Repository) DeleteHypervisorsNotIn(openstackIDs []string) error {
+	if len(openstackIDs) == 0 {
+		result := r.db.Delete(&models.Hypervisor{})
+		return result.Error
+	}
+	result := r.db.Where("open_stack_id NOT IN ?", openstackIDs).Delete(&models.Hypervisor{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		log.Printf("Deleted %d hypervisors that no longer exist in OpenStack", result.RowsAffected)
+	}
+	return nil
 }
 
 // Project operations

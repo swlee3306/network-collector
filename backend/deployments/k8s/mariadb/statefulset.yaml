@@ -14,6 +14,25 @@ spec:
     app: mariadb
   clusterIP: None
 ---
+# NodePort Service for external access to MariaDB
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb-nodeport
+  namespace: default
+  labels:
+    app: mariadb
+    service-type: external
+spec:
+  type: NodePort
+  ports:
+    - port: 3306
+      targetPort: 3306
+      nodePort: 30306  # External port: <node-ip>:30306
+      name: mysql
+  selector:
+    app: mariadb
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

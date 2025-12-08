@@ -32,13 +32,20 @@ func (c *ProjectCollector) CollectProjects() error {
 
 	var errors []error
 	successCount := 0
+	openstackIDs := make([]string, 0, len(openstackProjects))
 
 	for _, project := range openstackProjects {
+		openstackIDs = append(openstackIDs, project.ID)
 		if err := c.saveProject(project); err != nil {
 			errors = append(errors, fmt.Errorf("failed to save project %s: %w", project.ID, err))
 			continue
 		}
 		successCount++
+	}
+
+	// Delete projects that no longer exist in OpenStack
+	if err := c.repository.DeleteProjectsNotIn(openstackIDs); err != nil {
+		errors = append(errors, fmt.Errorf("failed to delete removed projects: %w", err))
 	}
 
 	if len(errors) == len(openstackProjects) {

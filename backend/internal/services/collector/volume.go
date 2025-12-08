@@ -32,13 +32,20 @@ func (c *VolumeCollector) CollectVolumes() error {
 
 	var errors []error
 	successCount := 0
+	openstackIDs := make([]string, 0, len(openstackVolumes))
 
 	for _, volume := range openstackVolumes {
+		openstackIDs = append(openstackIDs, volume.ID)
 		if err := c.saveVolume(volume); err != nil {
 			errors = append(errors, fmt.Errorf("failed to save volume %s: %w", volume.ID, err))
 			continue
 		}
 		successCount++
+	}
+
+	// Delete volumes that no longer exist in OpenStack
+	if err := c.repository.DeleteVolumesNotIn(openstackIDs); err != nil {
+		errors = append(errors, fmt.Errorf("failed to delete removed volumes: %w", err))
 	}
 
 	// If no volumes exist, that's not an error - just return success

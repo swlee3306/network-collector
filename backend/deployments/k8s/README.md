@@ -124,9 +124,39 @@ kubectl logs -f deployment/network-collector-frontend
 2. MariaDB 서비스 확인:
    ```bash
    kubectl get svc mariadb
+   kubectl get svc mariadb-nodeport  # NodePort Service 확인
    ```
 
 3. 데이터베이스 비밀번호가 올바른지 확인
+
+### MariaDB 외부 접속
+
+MariaDB는 NodePort Service를 통해 외부에서 접속할 수 있습니다:
+
+1. **NodePort Service 확인**:
+   ```bash
+   kubectl get svc mariadb-nodeport
+   ```
+
+2. **외부 접속 정보**:
+   - **포트**: 30306 (기본값)
+   - **호스트**: Kubernetes 노드 IP 주소
+   - **접속 예시**:
+     ```bash
+     # 노드 IP 확인
+     kubectl get nodes -o wide
+     
+     # MySQL 클라이언트로 접속
+     mysql -h <node-ip> -P 30306 -u openstack_monitor -p
+     ```
+
+3. **보안 주의사항**:
+   - NodePort는 모든 노드의 IP에서 접속 가능합니다
+   - 프로덕션 환경에서는 방화벽 규칙을 설정하여 접속을 제한하는 것이 좋습니다
+   - 또는 NodePort를 비활성화하고 `kubectl port-forward`를 사용할 수 있습니다:
+     ```bash
+     kubectl port-forward svc/mariadb 3306:3306
+     ```
 
 ### API가 응답하지 않음
 

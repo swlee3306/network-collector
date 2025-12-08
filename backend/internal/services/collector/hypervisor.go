@@ -32,13 +32,20 @@ func (c *HypervisorCollector) CollectHypervisors() error {
 
 	var errors []error
 	successCount := 0
+	openstackIDs := make([]string, 0, len(openstackHypervisors))
 
 	for _, hv := range openstackHypervisors {
+		openstackIDs = append(openstackIDs, hv.ID)
 		if err := c.saveHypervisor(hv); err != nil {
 			errors = append(errors, fmt.Errorf("failed to save hypervisor %s: %w", hv.ID, err))
 			continue
 		}
 		successCount++
+	}
+
+	// Delete hypervisors that no longer exist in OpenStack
+	if err := c.repository.DeleteHypervisorsNotIn(openstackIDs); err != nil {
+		errors = append(errors, fmt.Errorf("failed to delete removed hypervisors: %w", err))
 	}
 
 	if len(errors) == len(openstackHypervisors) {

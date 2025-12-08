@@ -77,6 +77,10 @@ mariadb:
     limits:
       memory: "2Gi"
       cpu: "1000m"
+  # NodePort configuration for external access
+  nodePort:
+    enabled: true  # Set to false to disable external access
+    port: 30306    # External port: <node-ip>:30306 (must be in range 30000-32767)
 
 # Database configuration
 database:

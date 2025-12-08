@@ -32,13 +32,20 @@ func (c *FlavorCollector) CollectFlavors() error {
 
 	var errors []error
 	successCount := 0
+	openstackIDs := make([]string, 0, len(openstackFlavors))
 
 	for _, flavor := range openstackFlavors {
+		openstackIDs = append(openstackIDs, flavor.ID)
 		if err := c.saveFlavor(flavor); err != nil {
 			errors = append(errors, fmt.Errorf("failed to save flavor %s: %w", flavor.ID, err))
 			continue
 		}
 		successCount++
+	}
+
+	// Delete flavors that no longer exist in OpenStack
+	if err := c.repository.DeleteFlavorsNotIn(openstackIDs); err != nil {
+		errors = append(errors, fmt.Errorf("failed to delete removed flavors: %w", err))
 	}
 
 	if len(errors) == len(openstackFlavors) {

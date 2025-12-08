@@ -32,13 +32,20 @@ func (c *InstanceCollector) CollectInstances() error {
 
 	var errors []error
 	successCount := 0
+	openstackIDs := make([]string, 0, len(openstackServers))
 
 	for _, server := range openstackServers {
+		openstackIDs = append(openstackIDs, server.ID)
 		if err := c.saveInstance(server); err != nil {
 			errors = append(errors, fmt.Errorf("failed to save instance %s: %w", server.ID, err))
 			continue
 		}
 		successCount++
+	}
+
+	// Delete instances that no longer exist in OpenStack
+	if err := c.repository.DeleteInstancesNotIn(openstackIDs); err != nil {
+		errors = append(errors, fmt.Errorf("failed to delete removed instances: %w", err))
 	}
 
 	// Return error if all failed, otherwise return partial error info

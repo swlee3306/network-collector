@@ -16,6 +16,28 @@ spec:
     {{- include "network-collector.selectorLabels" . | nindent 4 }}
   clusterIP: None
 ---
+{{- if .Values.mariadb.nodePort.enabled }}
+# NodePort Service for external access to MariaDB
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "network-collector.fullname" . }}-mariadb-nodeport
+  labels:
+    {{- include "network-collector.labels" . | nindent 4 }}
+    app: mariadb
+    service-type: external
+spec:
+  type: NodePort
+  ports:
+    - port: 3306
+      targetPort: 3306
+      nodePort: {{ .Values.mariadb.nodePort.port }}
+      name: mysql
+  selector:
+    app: mariadb
+    {{- include "network-collector.selectorLabels" . | nindent 4 }}
+---
+{{- end }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

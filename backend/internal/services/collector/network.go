@@ -35,13 +35,20 @@ func (c *NetworkCollector) CollectNetworks() error {
 
 	var errors []error
 	successCount := 0
+	openstackIDs := make([]string, 0, len(openstackNetworks))
 
 	for _, network := range openstackNetworks {
+		openstackIDs = append(openstackIDs, network.ID)
 		if err := c.saveNetwork(network); err != nil {
 			errors = append(errors, fmt.Errorf("failed to save network %s: %w", network.ID, err))
 			continue
 		}
 		successCount++
+	}
+
+	// Delete networks that no longer exist in OpenStack
+	if err := c.repository.DeleteNetworksNotIn(openstackIDs); err != nil {
+		errors = append(errors, fmt.Errorf("failed to delete removed networks: %w", err))
 	}
 
 	if len(errors) == len(openstackNetworks) {
@@ -106,13 +113,20 @@ func (c *NetworkCollector) CollectPorts() error {
 
 	var errors []error
 	successCount := 0
+	openstackIDs := make([]string, 0, len(openstackPorts))
 
 	for _, port := range openstackPorts {
+		openstackIDs = append(openstackIDs, port.ID)
 		if err := c.savePort(port); err != nil {
 			errors = append(errors, fmt.Errorf("failed to save port %s: %w", port.ID, err))
 			continue
 		}
 		successCount++
+	}
+
+	// Delete ports that no longer exist in OpenStack
+	if err := c.repository.DeletePortsNotIn(openstackIDs); err != nil {
+		errors = append(errors, fmt.Errorf("failed to delete removed ports: %w", err))
 	}
 
 	if len(errors) == len(openstackPorts) {
@@ -194,13 +208,20 @@ func (c *NetworkCollector) CollectRouters() error {
 
 	var errors []error
 	successCount := 0
+	openstackIDs := make([]string, 0, len(openstackRouters))
 
 	for _, router := range openstackRouters {
+		openstackIDs = append(openstackIDs, router.ID)
 		if err := c.saveRouter(router); err != nil {
 			errors = append(errors, fmt.Errorf("failed to save router %s: %w", router.ID, err))
 			continue
 		}
 		successCount++
+	}
+
+	// Delete routers that no longer exist in OpenStack
+	if err := c.repository.DeleteRoutersNotIn(openstackIDs); err != nil {
+		errors = append(errors, fmt.Errorf("failed to delete removed routers: %w", err))
 	}
 
 	if len(errors) == len(openstackRouters) {
