@@ -62,6 +62,17 @@ else
     MYSQL_CMD="mysql"
 fi
 
+# MariaDB Pod 찾기 (kubectl을 사용하는 경우)
+DB_POD=""
+if [ "$USE_KUBECTL_MYSQL" = "true" ] && command -v kubectl &> /dev/null; then
+    DB_POD=$(kubectl get pods -l app=mariadb -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+    if [ -n "$DB_POD" ]; then
+        echo -e "${GREEN}[INFO]${NC} MariaDB Pod 발견: $DB_POD"
+    else
+        echo -e "${YELLOW}[WARN]${NC} MariaDB Pod를 찾을 수 없습니다. kubectl run을 사용합니다."
+    fi
+fi
+
 echo ""
 echo "=========================================="
 echo "1. 메트릭 테이블 확인"
@@ -73,11 +84,35 @@ check_table() {
     local result
     local output
     
-    if [ "$USE_KUBECTL_MYSQL" = "true" ]; then
-        # Kubernetes Pod를 사용
-        output=$(kubectl run mysql-check-$table_name-$(date +%s) --rm -i --restart=Never --image=mysql:8.0 -- \
+    echo -n "  테이블 '$table_name' 확인 중... "
+    
+    if [ "$USE_KUBECTL_MYSQL" = "true" ] && [ -n "$DB_POD" ]; then
+        # MariaDB Pod를 직접 exec 사용 (더 빠르고 안정적)
+        output=$(kubectl exec "$DB_POD" -- mysql -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
+            -e "SHOW TABLES LIKE '$table_name';" 2>&1)
+        local exit_code=$?
+        
+        if [ $exit_code -ne 0 ]; then
+            echo -e "${RED}✗${NC} (쿼리 실패)"
+            echo "    오류: $(echo "$output" | tail -2)"
+            return 1
+        fi
+        
+        result=$(echo "$output" | grep -E "^$table_name$" | wc -l | tr -d '[:space:]')
+    elif [ "$USE_KUBECTL_MYSQL" = "true" ]; then
+        # MariaDB Pod가 없으면 kubectl run 사용 (타임아웃 30초)
+        local pod_name="mysql-check-${table_name}-$(date +%s | cut -c1-10)"
+        output=$(timeout 30 kubectl run "$pod_name" --rm -i --restart=Never --image=mysql:8.0 -- \
             mysql -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
             -e "SHOW TABLES LIKE '$table_name';" 2>&1)
+        local exit_code=$?
+        
+        if [ $exit_code -ne 0 ]; then
+            echo -e "${RED}✗${NC} (쿼리 실패)"
+            echo "    오류: $(echo "$output" | tail -3)"
+            return 1
+        fi
+        
         result=$(echo "$output" | grep -E "^$table_name$" | wc -l | tr -d '[:space:]')
     else
         output=$($MYSQL_CMD -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
@@ -113,14 +148,39 @@ check_metrics() {
     local count
     local output
     
-    if [ "$USE_KUBECTL_MYSQL" = "true" ]; then
-        output=$(kubectl run mysql-count-$table_name-$(date +%s) --rm -i --restart=Never --image=mysql:8.0 -- \
+    echo -n "  $resource_name 메트릭 확인 중... "
+    
+    if [ "$USE_KUBECTL_MYSQL" = "true" ] && [ -n "$DB_POD" ]; then
+        # MariaDB Pod를 직접 exec 사용
+        output=$(kubectl exec "$DB_POD" -- mysql -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
+            -N -e "SELECT COUNT(*) FROM $table_name;" 2>&1)
+        local exit_code=$?
+        
+        if [ $exit_code -ne 0 ]; then
+            echo -e "${RED}✗${NC} (쿼리 실패)"
+            echo "    오류: $(echo "$output" | tail -2)"
+            return 1
+        fi
+        
+        count=$(echo "$output" | grep -oE '[0-9]+' | head -1 || echo "0")
+    elif [ "$USE_KUBECTL_MYSQL" = "true" ]; then
+        # MariaDB Pod가 없으면 kubectl run 사용
+        local pod_name="mysql-count-${table_name}-$(date +%s | cut -c1-10)"
+        output=$(timeout 30 kubectl run "$pod_name" --rm -i --restart=Never --image=mysql:8.0 -- \
             mysql -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
-            -e "SELECT COUNT(*) FROM $table_name;" 2>&1)
+            -N -e "SELECT COUNT(*) FROM $table_name;" 2>&1)
+        local exit_code=$?
+        
+        if [ $exit_code -ne 0 ]; then
+            echo -e "${RED}✗${NC} (쿼리 실패)"
+            echo "    오류: $(echo "$output" | tail -3)"
+            return 1
+        fi
+        
         count=$(echo "$output" | tail -n 1 | grep -oE '[0-9]+' | head -1 || echo "0")
     else
         output=$($MYSQL_CMD -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
-            -e "SELECT COUNT(*) FROM $table_name;" 2>&1)
+            -N -e "SELECT COUNT(*) FROM $table_name;" 2>&1)
         count=$(echo "$output" | tail -n 1 | grep -oE '[0-9]+' | head -1 || echo "0")
     fi
     
@@ -134,17 +194,22 @@ check_metrics() {
         echo -e "${GREEN}✓${NC} $resource_name 메트릭: ${count}개 레코드"
         
         # 최근 메트릭 확인
-        if [ "$USE_KUBECTL_MYSQL" = "true" ]; then
-            recent_output=$(kubectl run mysql-recent-$table_name-$(date +%s) --rm -i --restart=Never --image=mysql:8.0 -- \
+        if [ "$USE_KUBECTL_MYSQL" = "true" ] && [ -n "$DB_POD" ]; then
+            recent_output=$(kubectl exec "$DB_POD" -- mysql -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
+                -N -e "SELECT MAX(timestamp) FROM $table_name;" 2>&1)
+            recent=$(echo "$recent_output" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' | head -1 || echo "N/A")
+        elif [ "$USE_KUBECTL_MYSQL" = "true" ]; then
+            local recent_pod_name="mysql-recent-${table_name}-$(date +%s | cut -c1-10)"
+            recent_output=$(timeout 30 kubectl run "$recent_pod_name" --rm -i --restart=Never --image=mysql:8.0 -- \
                 mysql -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
-                -e "SELECT MAX(timestamp) FROM $table_name;" 2>&1)
+                -N -e "SELECT MAX(timestamp) FROM $table_name;" 2>&1)
             recent=$(echo "$recent_output" | tail -n 1 | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' | head -1 || echo "N/A")
         else
             recent_output=$($MYSQL_CMD -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
-                -e "SELECT MAX(timestamp) FROM $table_name;" 2>&1)
+                -N -e "SELECT MAX(timestamp) FROM $table_name;" 2>&1)
             recent=$(echo "$recent_output" | tail -n 1 | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' | head -1 || echo "N/A")
         fi
-        echo "  최근 메트릭: $recent"
+        echo "    최근 메트릭: $recent"
         return 0
     fi
 }
@@ -166,13 +231,21 @@ show_recent_metrics() {
     echo ""
     echo "[$resource_name 최근 메트릭]"
     
-    if [ "$USE_KUBECTL_MYSQL" = "true" ]; then
-        kubectl run mysql-show-$table_name-$(date +%s) --rm -i --restart=Never --image=mysql:8.0 -- \
+    if [ "$USE_KUBECTL_MYSQL" = "true" ] && [ -n "$DB_POD" ]; then
+        # MariaDB Pod를 직접 exec 사용
+        kubectl exec "$DB_POD" -- mysql -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
+            -e "SELECT * FROM $table_name ORDER BY timestamp DESC LIMIT 3\G" 2>&1 | \
+            grep -v "^$" | grep -v "^mysql:" || echo "조회 실패"
+    elif [ "$USE_KUBECTL_MYSQL" = "true" ]; then
+        local pod_name="mysql-show-${table_name}-$(date +%s | cut -c1-10)"
+        timeout 30 kubectl run "$pod_name" --rm -i --restart=Never --image=mysql:8.0 -- \
             mysql -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
-            -e "SELECT * FROM $table_name ORDER BY timestamp DESC LIMIT 3\G" 2>&1 | grep -v "^pod/" || echo "조회 실패"
+            -e "SELECT * FROM $table_name ORDER BY timestamp DESC LIMIT 3\G" 2>&1 | \
+            grep -v "^pod/" | grep -v "^If you don't see" || echo "조회 실패"
     else
         $MYSQL_CMD -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
-            -e "SELECT * FROM $table_name ORDER BY timestamp DESC LIMIT 3\G" 2>&1 || echo "조회 실패"
+            -e "SELECT * FROM $table_name ORDER BY timestamp DESC LIMIT 3\G" 2>&1 | \
+            grep -v "^pod/" || echo "조회 실패"
     fi
 }
 
