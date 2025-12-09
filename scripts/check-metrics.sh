@@ -308,52 +308,56 @@ check_api() {
 }
 
 # 인스턴스 목록을 가져와서 첫 번째 인스턴스의 메트릭 확인
-if command -v kubectl &> /dev/null; then
-    API_SERVICE=$(kubectl get svc network-collector-api -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
-    if [ -n "$API_SERVICE" ]; then
-        echo -n "  인스턴스 목록 가져오는 중... "
-        
-        # 인스턴스 목록 가져오기 (타임아웃 30초)
-        INSTANCE_RESPONSE=$(timeout 30 kubectl run curl-instances-$(date +%s | cut -c1-10) --rm -i --restart=Never --image=curlimages/curl:latest -- \
-            curl -s "http://$API_SERVICE:8080/api/v1/instances" 2>&1)
-        local exit_code=$?
-        
-        if [ $exit_code -ne 0 ]; then
-            echo -e "${YELLOW}⚠${NC} API 연결 실패"
-            echo "    오류: $(echo "$INSTANCE_RESPONSE" | tail -2)"
-        else
-            # JSON에서 첫 번째 인스턴스 ID 추출 (여러 방법 시도)
-            INSTANCE_ID=""
+check_api_with_instance() {
+    if command -v kubectl &> /dev/null; then
+        API_SERVICE=$(kubectl get svc network-collector-api -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+        if [ -n "$API_SERVICE" ]; then
+            echo -n "  인스턴스 목록 가져오는 중... "
             
-            # 방법 1: jq 사용 (가장 안정적)
-            if command -v jq &> /dev/null; then
-                INSTANCE_ID=$(echo "$INSTANCE_RESPONSE" | jq -r '.data[0].id // empty' 2>/dev/null || echo "")
-            fi
+            # 인스턴스 목록 가져오기 (타임아웃 30초)
+            INSTANCE_RESPONSE=$(timeout 30 kubectl run curl-instances-$(date +%s | cut -c1-10) --rm -i --restart=Never --image=curlimages/curl:latest -- \
+                curl -s "http://$API_SERVICE:8080/api/v1/instances" 2>&1)
+            local exit_code=$?
             
-            # 방법 2: grep으로 추출 (jq가 없을 때)
-            if [ -z "$INSTANCE_ID" ]; then
-                INSTANCE_ID=$(echo "$INSTANCE_RESPONSE" | grep -oE '"id"\s*:\s*"[^"]*"' | head -1 | grep -oE '"[^"]*"' | head -1 | tr -d '"' || echo "")
-            fi
-            
-            # 방법 3: data 배열에서 직접 추출
-            if [ -z "$INSTANCE_ID" ]; then
-                INSTANCE_ID=$(echo "$INSTANCE_RESPONSE" | grep -oE '"id"\s*:\s*"[a-f0-9-]{36}"' | head -1 | grep -oE '[a-f0-9-]{36}' | head -1 || echo "")
-            fi
-            
-            if [ -n "$INSTANCE_ID" ] && [ ${#INSTANCE_ID} -ge 30 ]; then
-                echo -e "${GREEN}✓${NC} 인스턴스 발견: ${INSTANCE_ID:0:8}..."
-                check_api "/api/v1/instances/$INSTANCE_ID/metrics" "인스턴스 메트릭"
+            if [ $exit_code -ne 0 ]; then
+                echo -e "${YELLOW}⚠${NC} API 연결 실패"
+                echo "    오류: $(echo "$INSTANCE_RESPONSE" | tail -2)"
             else
-                echo -e "${YELLOW}⚠${NC} 인스턴스를 찾을 수 없습니다."
-                echo "    응답: $(echo "$INSTANCE_RESPONSE" | head -3)"
+                # JSON에서 첫 번째 인스턴스 ID 추출 (여러 방법 시도)
+                INSTANCE_ID=""
+                
+                # 방법 1: jq 사용 (가장 안정적)
+                if command -v jq &> /dev/null; then
+                    INSTANCE_ID=$(echo "$INSTANCE_RESPONSE" | jq -r '.data[0].id // empty' 2>/dev/null || echo "")
+                fi
+                
+                # 방법 2: grep으로 추출 (jq가 없을 때)
+                if [ -z "$INSTANCE_ID" ]; then
+                    INSTANCE_ID=$(echo "$INSTANCE_RESPONSE" | grep -oE '"id"\s*:\s*"[^"]*"' | head -1 | grep -oE '"[^"]*"' | head -1 | tr -d '"' || echo "")
+                fi
+                
+                # 방법 3: data 배열에서 직접 추출
+                if [ -z "$INSTANCE_ID" ]; then
+                    INSTANCE_ID=$(echo "$INSTANCE_RESPONSE" | grep -oE '"id"\s*:\s*"[a-f0-9-]{36}"' | head -1 | grep -oE '[a-f0-9-]{36}' | head -1 || echo "")
+                fi
+                
+                if [ -n "$INSTANCE_ID" ] && [ ${#INSTANCE_ID} -ge 30 ]; then
+                    echo -e "${GREEN}✓${NC} 인스턴스 발견: ${INSTANCE_ID:0:8}..."
+                    check_api "/api/v1/instances/$INSTANCE_ID/metrics" "인스턴스 메트릭"
+                else
+                    echo -e "${YELLOW}⚠${NC} 인스턴스를 찾을 수 없습니다."
+                    echo "    응답: $(echo "$INSTANCE_RESPONSE" | head -3)"
+                fi
             fi
+        else
+            echo -e "${YELLOW}⚠${NC} API Service를 찾을 수 없습니다."
         fi
     else
-        echo -e "${YELLOW}⚠${NC} API Service를 찾을 수 없습니다."
+        echo -e "${YELLOW}⚠${NC} kubectl이 없어 API 엔드포인트를 확인할 수 없습니다."
     fi
-else
-    echo -e "${YELLOW}⚠${NC} kubectl이 없어 API 엔드포인트를 확인할 수 없습니다."
-fi
+}
+
+check_api_with_instance
 
 echo ""
 echo "=========================================="

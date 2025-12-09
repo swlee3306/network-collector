@@ -160,7 +160,7 @@ func (c *Client) GetServerDiagnostics(serverID string) (*ServerDiagnostics, erro
 	url := c.nova.ServiceURL("servers", serverID, "diagnostics")
 	
 	var diagnostics map[string]interface{}
-	resp, err := c.nova.Get(url, &diagnostics, &gophercloud.RequestOpts{})
+	resp, err := c.nova.Get(url, &diagnostics, nil)
 	if err != nil {
 		return nil, errors.NewOpenStackError("nova", "get_server_diagnostics", err, true)
 	}
