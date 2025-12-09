@@ -44,20 +44,21 @@ fi
 # MySQL 클라이언트 확인
 if ! command -v mysql &> /dev/null; then
     echo -e "${YELLOW}[WARN] mysql 클라이언트가 설치되어 있지 않습니다.${NC}"
-    echo "Docker 컨테이너를 사용하여 확인합니다..."
+    echo "Kubernetes Pod를 사용하여 확인합니다..."
     
-    # Docker를 사용하여 확인
-    if command -v docker &> /dev/null; then
+    # kubectl을 사용하여 확인 (Docker보다 kubectl이 더 안정적)
+    if command -v kubectl &> /dev/null; then
+        USE_KUBECTL_MYSQL=true
+        MYSQL_CMD=""  # kubectl을 직접 사용하므로 빈 문자열
+    elif command -v docker &> /dev/null; then
+        USE_KUBECTL_MYSQL=false
         MYSQL_CMD="docker run --rm -i --network host mysql:8.0 mysql"
-    elif command -v kubectl &> /dev/null; then
-        # Kubernetes Pod를 사용하여 확인
-        echo "Kubernetes Pod를 사용하여 데이터베이스에 연결합니다..."
-        MYSQL_CMD="kubectl run mysql-client --rm -i --restart=Never --image=mysql:8.0 -- mysql"
     else
         echo -e "${RED}[ERROR] mysql 클라이언트, docker, 또는 kubectl이 필요합니다.${NC}"
         exit 1
     fi
 else
+    USE_KUBECTL_MYSQL=false
     MYSQL_CMD="mysql"
 fi
 
@@ -70,23 +71,29 @@ echo "=========================================="
 check_table() {
     local table_name=$1
     local result
+    local output
     
-    if command -v kubectl &> /dev/null && [ -z "$(command -v mysql)" ]; then
+    if [ "$USE_KUBECTL_MYSQL" = "true" ]; then
         # Kubernetes Pod를 사용
-        result=$(kubectl run mysql-check-$table_name --rm -i --restart=Never --image=mysql:8.0 -- \
+        output=$(kubectl run mysql-check-$table_name-$(date +%s) --rm -i --restart=Never --image=mysql:8.0 -- \
             mysql -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
-            -e "SHOW TABLES LIKE '$table_name';" 2>/dev/null | grep -c "$table_name" || echo "0")
+            -e "SHOW TABLES LIKE '$table_name';" 2>&1)
+        result=$(echo "$output" | grep -E "^$table_name$" | wc -l | tr -d '[:space:]')
     else
-        result=$($MYSQL_CMD -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
-            -e "SHOW TABLES LIKE '$table_name';" 2>/dev/null | grep -c "$table_name" || echo "0")
+        output=$($MYSQL_CMD -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
+            -e "SHOW TABLES LIKE '$table_name';" 2>&1)
+        result=$(echo "$output" | grep -E "^$table_name$" | wc -l | tr -d '[:space:]')
     fi
     
-    if [ "$result" -gt 0 ]; then
-        echo -e "${GREEN}✓${NC} 테이블 '$table_name' 존재"
-        return 0
-    else
+    # 숫자만 추출 (공백 제거)
+    result=$(echo "$result" | grep -oE '[0-9]+' | head -1 || echo "0")
+    
+    if [ -z "$result" ] || [ "$result" = "0" ]; then
         echo -e "${RED}✗${NC} 테이블 '$table_name' 없음"
         return 1
+    else
+        echo -e "${GREEN}✓${NC} 테이블 '$table_name' 존재"
+        return 0
     fi
 }
 
@@ -104,33 +111,41 @@ check_metrics() {
     local table_name=$1
     local resource_name=$2
     local count
+    local output
     
-    if command -v kubectl &> /dev/null && [ -z "$(command -v mysql)" ]; then
-        count=$(kubectl run mysql-count-$table_name --rm -i --restart=Never --image=mysql:8.0 -- \
+    if [ "$USE_KUBECTL_MYSQL" = "true" ]; then
+        output=$(kubectl run mysql-count-$table_name-$(date +%s) --rm -i --restart=Never --image=mysql:8.0 -- \
             mysql -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
-            -e "SELECT COUNT(*) FROM $table_name;" 2>/dev/null | tail -n 1 || echo "0")
+            -e "SELECT COUNT(*) FROM $table_name;" 2>&1)
+        count=$(echo "$output" | tail -n 1 | grep -oE '[0-9]+' | head -1 || echo "0")
     else
-        count=$($MYSQL_CMD -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
-            -e "SELECT COUNT(*) FROM $table_name;" 2>/dev/null | tail -n 1 || echo "0")
+        output=$($MYSQL_CMD -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
+            -e "SELECT COUNT(*) FROM $table_name;" 2>&1)
+        count=$(echo "$output" | tail -n 1 | grep -oE '[0-9]+' | head -1 || echo "0")
     fi
     
-    if [ "$count" -gt 0 ]; then
+    # 숫자만 추출
+    count=$(echo "$count" | grep -oE '[0-9]+' | head -1 || echo "0")
+    
+    if [ -z "$count" ] || [ "$count" = "0" ]; then
+        echo -e "${YELLOW}⚠${NC} $resource_name 메트릭: 데이터 없음"
+        return 1
+    else
         echo -e "${GREEN}✓${NC} $resource_name 메트릭: ${count}개 레코드"
         
         # 최근 메트릭 확인
-        if command -v kubectl &> /dev/null && [ -z "$(command -v mysql)" ]; then
-            recent=$(kubectl run mysql-recent-$table_name --rm -i --restart=Never --image=mysql:8.0 -- \
+        if [ "$USE_KUBECTL_MYSQL" = "true" ]; then
+            recent_output=$(kubectl run mysql-recent-$table_name-$(date +%s) --rm -i --restart=Never --image=mysql:8.0 -- \
                 mysql -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
-                -e "SELECT MAX(timestamp) FROM $table_name;" 2>/dev/null | tail -n 1 || echo "N/A")
+                -e "SELECT MAX(timestamp) FROM $table_name;" 2>&1)
+            recent=$(echo "$recent_output" | tail -n 1 | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' | head -1 || echo "N/A")
         else
-            recent=$($MYSQL_CMD -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
-                -e "SELECT MAX(timestamp) FROM $table_name;" 2>/dev/null | tail -n 1 || echo "N/A")
+            recent_output=$($MYSQL_CMD -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
+                -e "SELECT MAX(timestamp) FROM $table_name;" 2>&1)
+            recent=$(echo "$recent_output" | tail -n 1 | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' | head -1 || echo "N/A")
         fi
         echo "  최근 메트릭: $recent"
         return 0
-    else
-        echo -e "${YELLOW}⚠${NC} $resource_name 메트릭: 데이터 없음"
-        return 1
     fi
 }
 
@@ -151,13 +166,13 @@ show_recent_metrics() {
     echo ""
     echo "[$resource_name 최근 메트릭]"
     
-    if command -v kubectl &> /dev/null && [ -z "$(command -v mysql)" ]; then
-        kubectl run mysql-show-$table_name --rm -i --restart=Never --image=mysql:8.0 -- \
+    if [ "$USE_KUBECTL_MYSQL" = "true" ]; then
+        kubectl run mysql-show-$table_name-$(date +%s) --rm -i --restart=Never --image=mysql:8.0 -- \
             mysql -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
-            -e "SELECT * FROM $table_name ORDER BY timestamp DESC LIMIT 3\G" 2>/dev/null || echo "조회 실패"
+            -e "SELECT * FROM $table_name ORDER BY timestamp DESC LIMIT 3\G" 2>&1 | grep -v "^pod/" || echo "조회 실패"
     else
         $MYSQL_CMD -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" \
-            -e "SELECT * FROM $table_name ORDER BY timestamp DESC LIMIT 3\G" 2>/dev/null || echo "조회 실패"
+            -e "SELECT * FROM $table_name ORDER BY timestamp DESC LIMIT 3\G" 2>&1 || echo "조회 실패"
     fi
 }
 
