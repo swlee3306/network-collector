@@ -56,17 +56,7 @@ func (c *MetricsCollector) CollectInstanceMetrics() error {
 
 // collectInstanceMetric collects metrics for a single instance
 func (c *MetricsCollector) collectInstanceMetric(instance models.Instance) error {
-	// Get server details from OpenStack
-	_, err := c.client.GetServer(instance.OpenStackID)
-	if err != nil {
-		return fmt.Errorf("failed to get server: %w", err)
-	}
-
-	// Extract metrics from server status
-	// Note: OpenStack Nova API doesn't provide detailed metrics directly
-	// In production, you would use Ceilometer or Gnocchi for metrics
-	// For now, we'll collect basic information from flavor and status
-
+	// Get memory total from flavor (fallback if diagnostics doesn't provide it)
 	var memoryTotalMB int64 = 0
 	if instance.FlavorID != "" {
 		flavor, err := c.repository.GetFlavorByID(instance.FlavorID)
@@ -75,16 +65,45 @@ func (c *MetricsCollector) collectInstanceMetric(instance models.Instance) error
 		}
 	}
 
+	// Try to get diagnostics from OpenStack Nova API
+	// Diagnostics provides CPU, memory, disk, and network metrics
+	diagnostics, err := c.client.GetServerDiagnostics(instance.OpenStackID)
+	if err != nil {
+		// If diagnostics fails (e.g., insufficient permissions or server not running),
+		// log the error but continue with default values
+		log.Printf("Warning: Failed to get diagnostics for instance %s (%s): %v. Using default values.", 
+			instance.ID, instance.OpenStackID, err)
+		
+		// Use default values (0) but keep memory total from flavor
+		metrics := &models.InstanceMetrics{
+			InstanceID:      instance.ID,
+			Timestamp:       time.Now(),
+			CPUUsagePercent: 0,
+			MemoryUsageMB:   0,
+			MemoryTotalMB:   memoryTotalMB,
+			DiskReadBytes:   0,
+			DiskWriteBytes:  0,
+			NetworkRxBytes:  0,
+			NetworkTxBytes:  0,
+		}
+		return c.repository.SaveInstanceMetrics(metrics)
+	}
+
+	// Use diagnostics data, but fallback to flavor memory if diagnostics doesn't provide it
+	if diagnostics.MemoryTotalMB == 0 && memoryTotalMB > 0 {
+		diagnostics.MemoryTotalMB = memoryTotalMB
+	}
+
 	metrics := &models.InstanceMetrics{
 		InstanceID:      instance.ID,
 		Timestamp:       time.Now(),
-		CPUUsagePercent: 0, // Would be collected from Ceilometer/Gnocchi
-		MemoryUsageMB:   0, // Would be collected from Ceilometer/Gnocchi
-		MemoryTotalMB:   memoryTotalMB, // From flavor
-		DiskReadBytes:   0, // Would be collected from Ceilometer/Gnocchi
-		DiskWriteBytes:  0, // Would be collected from Ceilometer/Gnocchi
-		NetworkRxBytes:  0, // Would be collected from Ceilometer/Gnocchi
-		NetworkTxBytes:  0, // Would be collected from Ceilometer/Gnocchi
+		CPUUsagePercent: diagnostics.CPUUsagePercent,
+		MemoryUsageMB:   diagnostics.MemoryUsageMB,
+		MemoryTotalMB:   diagnostics.MemoryTotalMB,
+		DiskReadBytes:   diagnostics.DiskReadBytes,
+		DiskWriteBytes:  diagnostics.DiskWriteBytes,
+		NetworkRxBytes:  diagnostics.NetworkRxBytes,
+		NetworkTxBytes:  diagnostics.NetworkTxBytes,
 	}
 
 	return c.repository.SaveInstanceMetrics(metrics)

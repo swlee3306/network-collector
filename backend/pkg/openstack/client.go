@@ -139,6 +139,95 @@ func (c *Client) GetServer(serverID string) (*servers.Server, error) {
 	return server, nil
 }
 
+// ServerDiagnostics represents server diagnostics data
+type ServerDiagnostics struct {
+	CPUUsagePercent float64
+	MemoryUsageMB   int64
+	MemoryTotalMB   int64
+	DiskReadBytes   int64
+	DiskWriteBytes  int64
+	NetworkRxBytes  int64
+	NetworkTxBytes  int64
+}
+
+// GetServerDiagnostics gets server diagnostics (CPU, memory, disk, network metrics)
+// Note: This requires admin privileges or the server owner
+// Diagnostics format varies by hypervisor (libvirt, vmware, etc.)
+// Uses direct HTTP request since gophercloud may not have Diagnostics function in all versions
+func (c *Client) GetServerDiagnostics(serverID string) (*ServerDiagnostics, error) {
+	// Make direct HTTP request to Nova diagnostics endpoint
+	// GET /servers/{server_id}/diagnostics
+	url := c.nova.ServiceURL("servers", serverID, "diagnostics")
+	
+	var diagnostics map[string]interface{}
+	resp, err := c.nova.Get(url, &diagnostics, &gophercloud.RequestOpts{})
+	if err != nil {
+		return nil, errors.NewOpenStackError("nova", "get_server_diagnostics", err, true)
+	}
+	defer resp.Body.Close()
+
+	// Parse diagnostics map to extract metrics
+	// Diagnostics format varies by hypervisor, but typically includes:
+	// - cpu: CPU usage information
+	// - memory: Memory usage information
+	// - disk: Disk I/O information
+	// - network: Network I/O information
+	
+	metrics := &ServerDiagnostics{}
+
+	// Extract CPU usage (format varies by hypervisor)
+	if cpuData, ok := diagnostics["cpu"].(map[string]interface{}); ok {
+		// Try different CPU metric formats
+		if cpuPercent, ok := cpuData["cpu_percent"].(float64); ok {
+			metrics.CPUUsagePercent = cpuPercent
+		} else if cpuTime, ok := cpuData["cpu_time"].(float64); ok {
+			// CPU time in nanoseconds - would need previous measurement to calculate percentage
+			// For now, skip if we can't get percentage directly
+			_ = cpuTime
+		}
+	}
+
+	// Extract memory usage
+	if memoryData, ok := diagnostics["memory"].(map[string]interface{}); ok {
+		if memUsed, ok := memoryData["used"].(float64); ok {
+			metrics.MemoryUsageMB = int64(memUsed / 1024 / 1024) // Convert bytes to MB
+		}
+		if memTotal, ok := memoryData["total"].(float64); ok {
+			metrics.MemoryTotalMB = int64(memTotal / 1024 / 1024) // Convert bytes to MB
+		}
+	}
+
+	// Extract disk I/O
+	if diskData, ok := diagnostics["disk"].(map[string]interface{}); ok {
+		if readBytes, ok := diskData["read_bytes"].(float64); ok {
+			metrics.DiskReadBytes = int64(readBytes)
+		}
+		if writeBytes, ok := diskData["write_bytes"].(float64); ok {
+			metrics.DiskWriteBytes = int64(writeBytes)
+		}
+	}
+
+	// Extract network I/O
+	if networkData, ok := diagnostics["network"].(map[string]interface{}); ok {
+		// Network data is typically a map of interface names
+		var totalRx, totalTx int64
+		for _, ifaceData := range networkData {
+			if iface, ok := ifaceData.(map[string]interface{}); ok {
+				if rxBytes, ok := iface["rx_bytes"].(float64); ok {
+					totalRx += int64(rxBytes)
+				}
+				if txBytes, ok := iface["tx_bytes"].(float64); ok {
+					totalTx += int64(txBytes)
+				}
+			}
+		}
+		metrics.NetworkRxBytes = totalRx
+		metrics.NetworkTxBytes = totalTx
+	}
+
+	return metrics, nil
+}
+
 // ListHypervisors lists all hypervisors
 func (c *Client) ListHypervisors() ([]hypervisors.Hypervisor, error) {
 	allPages, err := hypervisors.List(c.nova, hypervisors.ListOpts{}).AllPages()
