@@ -71,34 +71,53 @@ func NewClient(config Config) (*Client, error) {
 	// If the endpoint type is not available, try other types in order
 	log.Printf("OpenStack client: attempting to use endpoint type '%s'", endpointType)
 
+	// Helper function to convert string endpoint type to gophercloud Availability
+	stringToAvailability := func(endpointType string) gophercloud.Availability {
+		switch strings.ToLower(endpointType) {
+		case "internal":
+			return gophercloud.AvailabilityInternal
+		case "admin":
+			return gophercloud.AvailabilityAdmin
+		case "public":
+			return gophercloud.AvailabilityPublic
+		default:
+			return gophercloud.AvailabilityPublic
+		}
+	}
+
 	// Helper function to try creating a service client with fallback
 	// Tries multiple endpoint types in order: specified -> public -> internal -> admin -> auto (no type)
 	tryCreateServiceClient := func(serviceName string, createFunc func(*gophercloud.ProviderClient, gophercloud.EndpointOpts) (*gophercloud.ServiceClient, error)) (*gophercloud.ServiceClient, error) {
-		// List of endpoint types to try in order
-		endpointTypesToTry := []string{}
+		// List of endpoint types to try in order (as Availability constants)
+		endpointAvailabilitiesToTry := []gophercloud.Availability{}
 		
 		// Start with the specified endpoint type
 		if endpointType != "" {
-			endpointTypesToTry = append(endpointTypesToTry, endpointType)
+			endpointAvailabilitiesToTry = append(endpointAvailabilitiesToTry, stringToAvailability(endpointType))
 		}
 		
 		// Add other types in fallback order (excluding the one we already tried)
-		allTypes := []string{"public", "internal", "admin"}
-		for _, t := range allTypes {
-			if t != endpointType {
-				endpointTypesToTry = append(endpointTypesToTry, t)
+		allAvailabilities := []gophercloud.Availability{
+			gophercloud.AvailabilityPublic,
+			gophercloud.AvailabilityInternal,
+			gophercloud.AvailabilityAdmin,
+		}
+		specifiedAvailability := stringToAvailability(endpointType)
+		for _, avail := range allAvailabilities {
+			if avail != specifiedAvailability {
+				endpointAvailabilitiesToTry = append(endpointAvailabilitiesToTry, avail)
 			}
 		}
 		
 		var lastErr error
-		// Try each endpoint type
-		for _, tryType := range endpointTypesToTry {
-			opts := gophercloud.EndpointOpts{Type: tryType}
+		// Try each endpoint type using Availability constant
+		for _, tryAvailability := range endpointAvailabilitiesToTry {
+			opts := gophercloud.EndpointOpts{Availability: tryAvailability}
 			client, err := createFunc(provider, opts)
 			if err == nil {
 				// Log the actual endpoint URL being used
 				endpointURL := client.Endpoint
-				log.Printf("OpenStack %s client: successfully created with endpoint type '%s', URL: %s", serviceName, tryType, endpointURL)
+				log.Printf("OpenStack %s client: successfully created with endpoint availability '%v', URL: %s", serviceName, tryAvailability, endpointURL)
 				return client, nil
 			}
 			
@@ -109,13 +128,13 @@ func NewClient(config Config) (*Client, error) {
 				contains(errMsg, "service catalog")
 			
 			if isEndpointNotFound {
-				log.Printf("OpenStack %s client: endpoint type '%s' not found, trying next option", serviceName, tryType)
+				log.Printf("OpenStack %s client: endpoint availability '%v' not found, trying next option", serviceName, tryAvailability)
 				lastErr = err
 				continue
 			}
 			
 			// If it's not an endpoint not found error, return immediately
-			log.Printf("OpenStack %s client: failed to create with endpoint type '%s': %v", serviceName, tryType, err)
+			log.Printf("OpenStack %s client: failed to create with endpoint availability '%v': %v", serviceName, tryAvailability, err)
 			return nil, err
 		}
 		
@@ -126,12 +145,22 @@ func NewClient(config Config) (*Client, error) {
 		if err == nil {
 			endpointURL := client.Endpoint
 			log.Printf("OpenStack %s client: successfully created with auto-selected endpoint, URL: %s", serviceName, endpointURL)
+			
+			// Warn if the auto-selected endpoint is a public URL and internal was requested
+			if endpointType == "internal" && (strings.Contains(endpointURL, "http://") || strings.Contains(endpointURL, "https://")) {
+				// Check if it's likely a public URL (contains domain names, not just IPs)
+				if strings.Contains(endpointURL, ".") && !strings.HasPrefix(endpointURL, "http://192.168.") && !strings.HasPrefix(endpointURL, "http://10.") && !strings.HasPrefix(endpointURL, "http://172.") {
+					log.Printf("WARNING: OpenStack %s client: requested 'internal' endpoint but auto-selection chose what appears to be a public URL: %s", serviceName, endpointURL)
+					log.Printf("WARNING: This may cause connectivity issues. Please verify OpenStack service catalog has internal endpoints registered.")
+				}
+			}
+			
 			return client, nil
 		}
 		
 		// All attempts failed
-		log.Printf("OpenStack %s client: all endpoint type attempts failed, last error: %v", serviceName, lastErr)
-		return nil, fmt.Errorf("failed to create %s client: tried types %v and auto-selection, all failed. Last error: %v", serviceName, endpointTypesToTry, lastErr)
+		log.Printf("OpenStack %s client: all endpoint availability attempts failed, last error: %v", serviceName, lastErr)
+		return nil, fmt.Errorf("failed to create %s client: tried availabilities %v and auto-selection, all failed. Last error: %v", serviceName, endpointAvailabilitiesToTry, lastErr)
 	}
 
 	// Get service clients with fallback support
