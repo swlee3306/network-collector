@@ -18,11 +18,12 @@ import (
 
 // Config holds OpenStack client configuration
 type Config struct {
-	AuthURL    string
-	Username   string
-	Password   string
-	ProjectID  string
-	DomainName string
+	AuthURL      string
+	Username     string
+	Password     string
+	ProjectID    string
+	DomainName   string
+	EndpointType string // "public", "internal", or "admin" - controls which endpoint to use
 }
 
 // Client wraps OpenStack API clients
@@ -52,23 +53,39 @@ func NewClient(config Config) (*Client, error) {
 	// Set token expiration and refresh logic
 	provider.HTTPClient.Timeout = 30 * time.Second
 
-	// Get service clients
-	nova, err := openstack.NewComputeV2(provider, gophercloud.EndpointOpts{})
+	// Determine endpoint type (default to "public" if not specified)
+	endpointType := config.EndpointType
+	if endpointType == "" {
+		endpointType = "public"
+	}
+
+	// Validate endpoint type
+	if endpointType != "public" && endpointType != "internal" && endpointType != "admin" {
+		endpointType = "public" // Default to public if invalid
+	}
+
+	// Endpoint options for service clients
+	endpointOpts := gophercloud.EndpointOpts{
+		Type: endpointType,
+	}
+
+	// Get service clients with specified endpoint type
+	nova, err := openstack.NewComputeV2(provider, endpointOpts)
 	if err != nil {
 		return nil, errors.NewOpenStackError("nova", "create_client", err, true)
 	}
 
-	neutron, err := openstack.NewNetworkV2(provider, gophercloud.EndpointOpts{})
+	neutron, err := openstack.NewNetworkV2(provider, endpointOpts)
 	if err != nil {
 		return nil, errors.NewOpenStackError("neutron", "create_client", err, true)
 	}
 
-	cinder, err := openstack.NewBlockStorageV3(provider, gophercloud.EndpointOpts{})
+	cinder, err := openstack.NewBlockStorageV3(provider, endpointOpts)
 	if err != nil {
 		return nil, errors.NewOpenStackError("cinder", "create_client", err, true)
 	}
 
-	keystone, err := openstack.NewIdentityV3(provider, gophercloud.EndpointOpts{})
+	keystone, err := openstack.NewIdentityV3(provider, endpointOpts)
 	if err != nil {
 		return nil, errors.NewOpenStackError("keystone", "create_client", err, true)
 	}

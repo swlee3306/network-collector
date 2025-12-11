@@ -16,11 +16,12 @@ type DatabaseConfig struct {
 
 // OpenStackConfig holds OpenStack API configuration
 type OpenStackConfig struct {
-	AuthURL    string
-	Username   string
-	Password   string
-	ProjectID  string
-	DomainName string
+	AuthURL     string
+	Username    string
+	Password    string
+	ProjectID   string
+	DomainName  string
+	EndpointType string // "public", "internal", or "admin" - controls which endpoint to use
 }
 
 // ServerConfig holds server configuration
@@ -62,11 +63,12 @@ func Load() *Config {
 			Database: getEnv("DB_NAME", "openstack_monitor"),
 		},
 		OpenStack: OpenStackConfig{
-			AuthURL:    getEnv("OPENSTACK_AUTH_URL", ""),
-			Username:   getEnv("OPENSTACK_USERNAME", ""),
-			Password:   getEnv("OPENSTACK_PASSWORD", ""),
-			ProjectID:  getEnv("OPENSTACK_PROJECT_ID", ""),
-			DomainName: getEnv("OPENSTACK_DOMAIN_NAME", "default"),
+			AuthURL:      getEnv("OPENSTACK_AUTH_URL", ""),
+			Username:     getEnv("OPENSTACK_USERNAME", ""),
+			Password:     getEnv("OPENSTACK_PASSWORD", ""),
+			ProjectID:    getEnv("OPENSTACK_PROJECT_ID", ""),
+			DomainName:   getEnv("OPENSTACK_DOMAIN_NAME", "default"),
+			EndpointType: getEnv("OPENSTACK_ENDPOINT_TYPE", "public"), // "public", "internal", or "admin"
 		},
 		Server: ServerConfig{
 			Port:       getEnvAsInt("SERVER_PORT", 8080),

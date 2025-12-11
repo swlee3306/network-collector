@@ -29,11 +29,12 @@ type OpenStackCollector struct {
 // NewOpenStackCollector creates a new OpenStack collector
 func NewOpenStackCollector(cfg *config.Config, repository *storage.Repository) (*OpenStackCollector, error) {
 	openstackConfig := openstack.Config{
-		AuthURL:    cfg.OpenStack.AuthURL,
-		Username:   cfg.OpenStack.Username,
-		Password:   cfg.OpenStack.Password,
-		ProjectID:  cfg.OpenStack.ProjectID,
-		DomainName: cfg.OpenStack.DomainName,
+		AuthURL:      cfg.OpenStack.AuthURL,
+		Username:     cfg.OpenStack.Username,
+		Password:     cfg.OpenStack.Password,
+		ProjectID:    cfg.OpenStack.ProjectID,
+		DomainName:   cfg.OpenStack.DomainName,
+		EndpointType: cfg.OpenStack.EndpointType,
 	}
 
 	client, err := openstack.NewClient(openstackConfig)

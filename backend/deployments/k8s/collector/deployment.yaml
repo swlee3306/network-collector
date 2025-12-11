@@ -79,6 +79,11 @@ spec:
             configMapKeyRef:
               name: network-collector-config
               key: OPENSTACK_DOMAIN_NAME
+        - name: OPENSTACK_ENDPOINT_TYPE
+          valueFrom:
+            configMapKeyRef:
+              name: network-collector-config
+              key: OPENSTACK_ENDPOINT_TYPE
         # Logging configuration
         - name: LOG_LEVEL
           valueFrom:

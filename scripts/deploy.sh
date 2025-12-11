@@ -184,6 +184,20 @@ get_secrets() {
         log_info "AUTH_TOKEN: [파일에서 로드됨]"
     fi
     
+    # OPENSTACK_ENDPOINT_TYPE 입력 (선택적, 기본값: internal)
+    if [ -z "$OPENSTACK_ENDPOINT_TYPE" ]; then
+        read -p "OPENSTACK_ENDPOINT_TYPE [public/internal/admin, 기본값: internal]: " OPENSTACK_ENDPOINT_TYPE
+        OPENSTACK_ENDPOINT_TYPE=${OPENSTACK_ENDPOINT_TYPE:-internal}
+    else
+        log_info "OPENSTACK_ENDPOINT_TYPE: $OPENSTACK_ENDPOINT_TYPE"
+    fi
+    
+    # OPENSTACK_ENDPOINT_TYPE 유효성 검증
+    if [ "$OPENSTACK_ENDPOINT_TYPE" != "public" ] && [ "$OPENSTACK_ENDPOINT_TYPE" != "internal" ] && [ "$OPENSTACK_ENDPOINT_TYPE" != "admin" ]; then
+        log_warn "OPENSTACK_ENDPOINT_TYPE이 'public', 'internal', 또는 'admin'이 아닙니다. 기본값 'internal'을 사용합니다."
+        OPENSTACK_ENDPOINT_TYPE="internal"
+    fi
+    
     # LOGIN_TYPE 입력 (선택적, 기본값: internal)
     if [ -z "$LOGIN_TYPE" ]; then
         read -p "LOGIN_TYPE [internal/public, 기본값: internal]: " LOGIN_TYPE
@@ -222,10 +236,11 @@ deploy_k8s() {
         --namespace="$NAMESPACE" \
         --dry-run=client -o yaml | kubectl apply -f -
     
-    # ConfigMap 생성 (LOGIN_TYPE 환경변수 반영)
+    # ConfigMap 생성 (LOGIN_TYPE, OPENSTACK_ENDPOINT_TYPE 환경변수 반영)
     log_info "ConfigMap 생성 중..."
     LOGIN_TYPE=${LOGIN_TYPE:-internal}
-    # ConfigMap을 직접 생성하여 LOGIN_TYPE 적용
+    OPENSTACK_ENDPOINT_TYPE=${OPENSTACK_ENDPOINT_TYPE:-internal}
+    # ConfigMap을 직접 생성하여 LOGIN_TYPE, OPENSTACK_ENDPOINT_TYPE 적용
     kubectl create configmap network-collector-config \
         --from-literal=DB_HOST="mariadb" \
         --from-literal=DB_PORT="3306" \
@@ -236,6 +251,7 @@ deploy_k8s() {
         --from-literal=LOG_LEVEL="info" \
         --from-literal=ENVIRONMENT="production" \
         --from-literal=OPENSTACK_DOMAIN_NAME="default" \
+        --from-literal=OPENSTACK_ENDPOINT_TYPE="$OPENSTACK_ENDPOINT_TYPE" \
         --from-literal=LOGIN_TYPE="$LOGIN_TYPE" \
         --namespace="$NAMESPACE" \
         --dry-run=client -o yaml | kubectl apply -f -
@@ -289,8 +305,9 @@ deploy_helm() {
     
     cd "$PROJECT_ROOT/backend/deployments/helm"
     
-    # LOGIN_TYPE 기본값 설정
+    # LOGIN_TYPE, OPENSTACK_ENDPOINT_TYPE 기본값 설정
     LOGIN_TYPE=${LOGIN_TYPE:-internal}
+    OPENSTACK_ENDPOINT_TYPE=${OPENSTACK_ENDPOINT_TYPE:-internal}
     
     helm upgrade --install network-collector . \
         --namespace "$NAMESPACE" \
@@ -302,6 +319,7 @@ deploy_helm() {
         --set secrets.openstackProjectID="$OPENSTACK_PROJECT_ID" \
         --set secrets.jwtSecret="$JWT_SECRET" \
         --set secrets.authToken="$AUTH_TOKEN" \
+        --set openstack.endpointType="$OPENSTACK_ENDPOINT_TYPE" \
         --set config.loginType="$LOGIN_TYPE" \
         --set collector.image.repository="${IMAGE_REGISTRY}network-collector" \
         --set collector.image.tag="$IMAGE_TAG" \

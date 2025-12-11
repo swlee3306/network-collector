@@ -22,6 +22,12 @@ data:
   # OpenStack Domain (non-sensitive)
   OPENSTACK_DOMAIN_NAME: {{ .Values.openstack.domainName | quote }}
   
+  # OpenStack Endpoint Type
+  # "public": Use public endpoint (default, accessible from external networks)
+  # "internal": Use internal endpoint (accessible only from internal networks)
+  # "admin": Use admin endpoint (for administrative access)
+  OPENSTACK_ENDPOINT_TYPE: {{ .Values.openstack.endpointType | default "internal" | quote }}
+  
   # Login type configuration
   # "internal": Login endpoint is public (no authentication required) - default
   # "public": Login endpoint requires authentication
