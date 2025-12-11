@@ -184,18 +184,18 @@ get_secrets() {
         log_info "AUTH_TOKEN: [파일에서 로드됨]"
     fi
     
-    # OPENSTACK_ENDPOINT_TYPE 입력 (선택적, 기본값: internal)
+    # OPENSTACK_ENDPOINT_TYPE 입력 (선택적, 기본값: public)
     if [ -z "$OPENSTACK_ENDPOINT_TYPE" ]; then
-        read -p "OPENSTACK_ENDPOINT_TYPE [public/internal/admin, 기본값: internal]: " OPENSTACK_ENDPOINT_TYPE
-        OPENSTACK_ENDPOINT_TYPE=${OPENSTACK_ENDPOINT_TYPE:-internal}
+        read -p "OPENSTACK_ENDPOINT_TYPE [public/internal/admin, 기본값: public]: " OPENSTACK_ENDPOINT_TYPE
+        OPENSTACK_ENDPOINT_TYPE=${OPENSTACK_ENDPOINT_TYPE:-public}
     else
         log_info "OPENSTACK_ENDPOINT_TYPE: $OPENSTACK_ENDPOINT_TYPE"
     fi
     
     # OPENSTACK_ENDPOINT_TYPE 유효성 검증
     if [ "$OPENSTACK_ENDPOINT_TYPE" != "public" ] && [ "$OPENSTACK_ENDPOINT_TYPE" != "internal" ] && [ "$OPENSTACK_ENDPOINT_TYPE" != "admin" ]; then
-        log_warn "OPENSTACK_ENDPOINT_TYPE이 'public', 'internal', 또는 'admin'이 아닙니다. 기본값 'internal'을 사용합니다."
-        OPENSTACK_ENDPOINT_TYPE="internal"
+        log_warn "OPENSTACK_ENDPOINT_TYPE이 'public', 'internal', 또는 'admin'이 아닙니다. 기본값 'public'을 사용합니다."
+        OPENSTACK_ENDPOINT_TYPE="public"
     fi
     
     # LOGIN_TYPE 입력 (선택적, 기본값: internal)
@@ -239,7 +239,11 @@ deploy_k8s() {
     # ConfigMap 생성 (LOGIN_TYPE, OPENSTACK_ENDPOINT_TYPE 환경변수 반영)
     log_info "ConfigMap 생성 중..."
     LOGIN_TYPE=${LOGIN_TYPE:-internal}
-    OPENSTACK_ENDPOINT_TYPE=${OPENSTACK_ENDPOINT_TYPE:-internal}
+    OPENSTACK_ENDPOINT_TYPE=${OPENSTACK_ENDPOINT_TYPE:-public}
+    
+    # 디버깅: 환경변수 값 확인
+    log_info "설정된 값: LOGIN_TYPE=$LOGIN_TYPE, OPENSTACK_ENDPOINT_TYPE=$OPENSTACK_ENDPOINT_TYPE"
+    
     # ConfigMap을 직접 생성하여 LOGIN_TYPE, OPENSTACK_ENDPOINT_TYPE 적용
     kubectl create configmap network-collector-config \
         --from-literal=DB_HOST="mariadb" \
@@ -255,6 +259,8 @@ deploy_k8s() {
         --from-literal=LOGIN_TYPE="$LOGIN_TYPE" \
         --namespace="$NAMESPACE" \
         --dry-run=client -o yaml | kubectl apply -f -
+    
+    log_info "ConfigMap이 업데이트되었습니다. Collector Pod를 재시작해야 변경사항이 적용됩니다."
     
     # Frontend ConfigMap 생성
     kubectl create configmap network-collector-frontend-config \
@@ -275,6 +281,11 @@ deploy_k8s() {
     # Collector 배포
     log_info "Collector 배포 중..."
     kubectl apply -f backend/deployments/k8s/collector/deployment.yaml -n "$NAMESPACE"
+    
+    # ConfigMap 변경사항을 Pod에 적용하기 위해 Collector Pod 재시작
+    log_info "ConfigMap 변경사항 적용을 위해 Collector Pod 재시작 중..."
+    kubectl rollout restart deployment network-collector -n "$NAMESPACE" || true
+    log_info "Collector Pod 재시작 완료. Pod가 준비될 때까지 잠시 기다려주세요."
     
     # API 배포
     log_info "API Service 배포 중..."
@@ -307,7 +318,7 @@ deploy_helm() {
     
     # LOGIN_TYPE, OPENSTACK_ENDPOINT_TYPE 기본값 설정
     LOGIN_TYPE=${LOGIN_TYPE:-internal}
-    OPENSTACK_ENDPOINT_TYPE=${OPENSTACK_ENDPOINT_TYPE:-internal}
+    OPENSTACK_ENDPOINT_TYPE=${OPENSTACK_ENDPOINT_TYPE:-public}
     
     helm upgrade --install network-collector . \
         --namespace "$NAMESPACE" \

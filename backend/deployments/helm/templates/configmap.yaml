@@ -26,7 +26,8 @@ data:
   # "public": Use public endpoint (default, accessible from external networks)
   # "internal": Use internal endpoint (accessible only from internal networks)
   # "admin": Use admin endpoint (for administrative access)
-  OPENSTACK_ENDPOINT_TYPE: {{ .Values.openstack.endpointType | default "internal" | quote }}
+  # Note: If the specified endpoint type is not available, the system will automatically fallback to "public"
+  OPENSTACK_ENDPOINT_TYPE: {{ .Values.openstack.endpointType | default "public" | quote }}
   
   # Login type configuration
   # "internal": Login endpoint is public (no authentication required) - default

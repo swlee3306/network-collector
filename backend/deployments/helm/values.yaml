@@ -108,8 +108,9 @@ logging:
 openstack:
   domainName: default
   # Endpoint type: "public", "internal", or "admin"
-  # "internal" is recommended for internal network access to avoid timeout issues
-  endpointType: internal
+  # "public" is the default. If the specified endpoint type is not available, the system will automatically fallback to "public"
+  # "internal" can be used for internal network access to avoid timeout issues (if available in your OpenStack setup)
+  endpointType: public
 
 # Authentication configuration (values should be set via secrets)
 auth:

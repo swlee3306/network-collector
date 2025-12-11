@@ -1,6 +1,7 @@
 package openstack
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gophercloud/gophercloud"
@@ -64,28 +65,51 @@ func NewClient(config Config) (*Client, error) {
 		endpointType = "public" // Default to public if invalid
 	}
 
-	// Endpoint options for service clients
+	// Try to create service clients with specified endpoint type
+	// If the endpoint type is not available, fallback to "public"
 	endpointOpts := gophercloud.EndpointOpts{
 		Type: endpointType,
 	}
 
-	// Get service clients with specified endpoint type
-	nova, err := openstack.NewComputeV2(provider, endpointOpts)
+	// Helper function to try creating a service client with fallback
+	tryCreateServiceClient := func(serviceName string, createFunc func(*gophercloud.ProviderClient, gophercloud.EndpointOpts) (*gophercloud.ServiceClient, error)) (*gophercloud.ServiceClient, error) {
+		client, err := createFunc(provider, endpointOpts)
+		if err != nil {
+			// If endpoint type is not "public" and we get "No suitable endpoint" error, try public
+			if endpointType != "public" {
+				errMsg := err.Error()
+				if contains(errMsg, "No suitable endpoint") || contains(errMsg, "could not find") {
+					// Fallback to public endpoint
+					publicOpts := gophercloud.EndpointOpts{Type: "public"}
+					client, fallbackErr := createFunc(provider, publicOpts)
+					if fallbackErr == nil {
+						return client, nil
+					}
+					// If public also fails, return original error
+				}
+			}
+			return nil, err
+		}
+		return client, nil
+	}
+
+	// Get service clients with fallback support
+	nova, err := tryCreateServiceClient("nova", openstack.NewComputeV2)
 	if err != nil {
 		return nil, errors.NewOpenStackError("nova", "create_client", err, true)
 	}
 
-	neutron, err := openstack.NewNetworkV2(provider, endpointOpts)
+	neutron, err := tryCreateServiceClient("neutron", openstack.NewNetworkV2)
 	if err != nil {
 		return nil, errors.NewOpenStackError("neutron", "create_client", err, true)
 	}
 
-	cinder, err := openstack.NewBlockStorageV3(provider, endpointOpts)
+	cinder, err := tryCreateServiceClient("cinder", openstack.NewBlockStorageV3)
 	if err != nil {
 		return nil, errors.NewOpenStackError("cinder", "create_client", err, true)
 	}
 
-	keystone, err := openstack.NewIdentityV3(provider, endpointOpts)
+	keystone, err := tryCreateServiceClient("keystone", openstack.NewIdentityV3)
 	if err != nil {
 		return nil, errors.NewOpenStackError("keystone", "create_client", err, true)
 	}
@@ -97,6 +121,11 @@ func NewClient(config Config) (*Client, error) {
 		cinder:   cinder,
 		keystone: keystone,
 	}, nil
+}
+
+// contains checks if a string contains a substring (case-insensitive)
+func contains(s, substr string) bool {
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }
 
 // GetNovaClient returns the Nova (Compute) service client
