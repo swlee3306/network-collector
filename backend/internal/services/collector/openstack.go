@@ -37,10 +37,15 @@ func NewOpenStackCollector(cfg *config.Config, repository *storage.Repository) (
 		EndpointType: cfg.OpenStack.EndpointType,
 	}
 
+	log.Printf("Creating OpenStack client with EndpointType: '%s'", openstackConfig.EndpointType)
+	
 	client, err := openstack.NewClient(openstackConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OpenStack client: %w", err)
 	}
+	
+	// Log the actual endpoints being used
+	log.Printf("OpenStack client created successfully. Nova endpoint: %s", client.GetNovaClient().Endpoint)
 
 	return &OpenStackCollector{
 		client:             client,

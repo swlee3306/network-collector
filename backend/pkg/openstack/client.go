@@ -96,7 +96,9 @@ func NewClient(config Config) (*Client, error) {
 			opts := gophercloud.EndpointOpts{Type: tryType}
 			client, err := createFunc(provider, opts)
 			if err == nil {
-				log.Printf("OpenStack %s client: successfully created with endpoint type '%s'", serviceName, tryType)
+				// Log the actual endpoint URL being used
+				endpointURL := client.Endpoint
+				log.Printf("OpenStack %s client: successfully created with endpoint type '%s', URL: %s", serviceName, tryType, endpointURL)
 				return client, nil
 			}
 			
@@ -122,7 +124,8 @@ func NewClient(config Config) (*Client, error) {
 		emptyOpts := gophercloud.EndpointOpts{}
 		client, err := createFunc(provider, emptyOpts)
 		if err == nil {
-			log.Printf("OpenStack %s client: successfully created with auto-selected endpoint", serviceName)
+			endpointURL := client.Endpoint
+			log.Printf("OpenStack %s client: successfully created with auto-selected endpoint, URL: %s", serviceName, endpointURL)
 			return client, nil
 		}
 		
