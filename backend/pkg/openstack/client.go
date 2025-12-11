@@ -1,6 +1,8 @@
 package openstack
 
 import (
+	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -71,25 +73,40 @@ func NewClient(config Config) (*Client, error) {
 		Type: endpointType,
 	}
 
+	log.Printf("OpenStack client: attempting to use endpoint type '%s'", endpointType)
+
 	// Helper function to try creating a service client with fallback
 	tryCreateServiceClient := func(serviceName string, createFunc func(*gophercloud.ProviderClient, gophercloud.EndpointOpts) (*gophercloud.ServiceClient, error)) (*gophercloud.ServiceClient, error) {
+		// Try with specified endpoint type first
 		client, err := createFunc(provider, endpointOpts)
 		if err != nil {
-			// If endpoint type is not "public" and we get "No suitable endpoint" error, try public
-			if endpointType != "public" {
-				errMsg := err.Error()
-				if contains(errMsg, "No suitable endpoint") || contains(errMsg, "could not find") {
-					// Fallback to public endpoint
-					publicOpts := gophercloud.EndpointOpts{Type: "public"}
-					client, fallbackErr := createFunc(provider, publicOpts)
-					if fallbackErr == nil {
-						return client, nil
-					}
-					// If public also fails, return original error
+			errMsg := err.Error()
+			log.Printf("OpenStack %s client: failed to create with endpoint type '%s': %v", serviceName, endpointType, err)
+			
+			// Check if this is an endpoint not found error
+			isEndpointNotFound := contains(errMsg, "No suitable endpoint") ||
+				contains(errMsg, "could not find") ||
+				contains(errMsg, "endpoint could not be found") ||
+				contains(errMsg, "service catalog")
+			
+			// If endpoint type is not "public" and we get endpoint not found error, try public
+			if endpointType != "public" && isEndpointNotFound {
+				log.Printf("OpenStack %s client: endpoint type '%s' not found, falling back to 'public'", serviceName, endpointType)
+				// Fallback to public endpoint
+				publicOpts := gophercloud.EndpointOpts{Type: "public"}
+				client, fallbackErr := createFunc(provider, publicOpts)
+				if fallbackErr == nil {
+					log.Printf("OpenStack %s client: successfully created with 'public' endpoint type", serviceName)
+					return client, nil
 				}
+				// If public also fails, return a combined error message
+				log.Printf("OpenStack %s client: fallback to 'public' also failed: %v", serviceName, fallbackErr)
+				return nil, fmt.Errorf("failed to create %s client with '%s' endpoint (fallback to 'public' also failed: %v)", serviceName, endpointType, fallbackErr)
 			}
+			// Return original error if it's not an endpoint not found error, or if we're already trying public
 			return nil, err
 		}
+		log.Printf("OpenStack %s client: successfully created with endpoint type '%s'", serviceName, endpointType)
 		return client, nil
 	}
 
