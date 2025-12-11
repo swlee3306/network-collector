@@ -68,46 +68,67 @@ func NewClient(config Config) (*Client, error) {
 	}
 
 	// Try to create service clients with specified endpoint type
-	// If the endpoint type is not available, fallback to "public"
-	endpointOpts := gophercloud.EndpointOpts{
-		Type: endpointType,
-	}
-
+	// If the endpoint type is not available, try other types in order
 	log.Printf("OpenStack client: attempting to use endpoint type '%s'", endpointType)
 
 	// Helper function to try creating a service client with fallback
+	// Tries multiple endpoint types in order: specified -> public -> internal -> admin -> auto (no type)
 	tryCreateServiceClient := func(serviceName string, createFunc func(*gophercloud.ProviderClient, gophercloud.EndpointOpts) (*gophercloud.ServiceClient, error)) (*gophercloud.ServiceClient, error) {
-		// Try with specified endpoint type first
-		client, err := createFunc(provider, endpointOpts)
-		if err != nil {
-			errMsg := err.Error()
-			log.Printf("OpenStack %s client: failed to create with endpoint type '%s': %v", serviceName, endpointType, err)
+		// List of endpoint types to try in order
+		endpointTypesToTry := []string{}
+		
+		// Start with the specified endpoint type
+		if endpointType != "" {
+			endpointTypesToTry = append(endpointTypesToTry, endpointType)
+		}
+		
+		// Add other types in fallback order (excluding the one we already tried)
+		allTypes := []string{"public", "internal", "admin"}
+		for _, t := range allTypes {
+			if t != endpointType {
+				endpointTypesToTry = append(endpointTypesToTry, t)
+			}
+		}
+		
+		var lastErr error
+		// Try each endpoint type
+		for _, tryType := range endpointTypesToTry {
+			opts := gophercloud.EndpointOpts{Type: tryType}
+			client, err := createFunc(provider, opts)
+			if err == nil {
+				log.Printf("OpenStack %s client: successfully created with endpoint type '%s'", serviceName, tryType)
+				return client, nil
+			}
 			
-			// Check if this is an endpoint not found error
+			errMsg := err.Error()
 			isEndpointNotFound := contains(errMsg, "No suitable endpoint") ||
 				contains(errMsg, "could not find") ||
 				contains(errMsg, "endpoint could not be found") ||
 				contains(errMsg, "service catalog")
 			
-			// If endpoint type is not "public" and we get endpoint not found error, try public
-			if endpointType != "public" && isEndpointNotFound {
-				log.Printf("OpenStack %s client: endpoint type '%s' not found, falling back to 'public'", serviceName, endpointType)
-				// Fallback to public endpoint
-				publicOpts := gophercloud.EndpointOpts{Type: "public"}
-				client, fallbackErr := createFunc(provider, publicOpts)
-				if fallbackErr == nil {
-					log.Printf("OpenStack %s client: successfully created with 'public' endpoint type", serviceName)
-					return client, nil
-				}
-				// If public also fails, return a combined error message
-				log.Printf("OpenStack %s client: fallback to 'public' also failed: %v", serviceName, fallbackErr)
-				return nil, fmt.Errorf("failed to create %s client with '%s' endpoint (fallback to 'public' also failed: %v)", serviceName, endpointType, fallbackErr)
+			if isEndpointNotFound {
+				log.Printf("OpenStack %s client: endpoint type '%s' not found, trying next option", serviceName, tryType)
+				lastErr = err
+				continue
 			}
-			// Return original error if it's not an endpoint not found error, or if we're already trying public
+			
+			// If it's not an endpoint not found error, return immediately
+			log.Printf("OpenStack %s client: failed to create with endpoint type '%s': %v", serviceName, tryType, err)
 			return nil, err
 		}
-		log.Printf("OpenStack %s client: successfully created with endpoint type '%s'", serviceName, endpointType)
-		return client, nil
+		
+		// If all specified types failed, try without specifying type (let gophercloud choose)
+		log.Printf("OpenStack %s client: all endpoint types failed, trying auto-selection (no type specified)", serviceName)
+		emptyOpts := gophercloud.EndpointOpts{}
+		client, err := createFunc(provider, emptyOpts)
+		if err == nil {
+			log.Printf("OpenStack %s client: successfully created with auto-selected endpoint", serviceName)
+			return client, nil
+		}
+		
+		// All attempts failed
+		log.Printf("OpenStack %s client: all endpoint type attempts failed, last error: %v", serviceName, lastErr)
+		return nil, fmt.Errorf("failed to create %s client: tried types %v and auto-selection, all failed. Last error: %v", serviceName, endpointTypesToTry, lastErr)
 	}
 
 	// Get service clients with fallback support
