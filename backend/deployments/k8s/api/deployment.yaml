@@ -89,6 +89,12 @@ spec:
             configMapKeyRef:
               name: network-collector-config
               key: ENVIRONMENT
+        # Login type configuration
+        - name: LOGIN_TYPE
+          valueFrom:
+            configMapKeyRef:
+              name: network-collector-config
+              key: LOGIN_TYPE
         resources:
           requests:
             memory: "256Mi"

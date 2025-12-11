@@ -94,6 +94,11 @@ server:
   port: 8080
   sseEnabled: true
 
+# Configuration
+config:
+  # Login type: "internal" (no auth required for login endpoint) or "public" (requires auth)
+  loginType: internal
+
 # Logging configuration
 logging:
   level: info

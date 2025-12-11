@@ -89,7 +89,18 @@ func (s *Server) setupRoutes() {
 	v1 := s.router.Group("/api/v1")
 	{
 		// Authentication
-		v1.POST("/auth/login", handlers.Login(s.config))
+		// Login endpoint access control based on LOGIN_TYPE:
+		// - "internal": No authentication required (default, for internal use)
+		// - "public": Requires authentication (for public access)
+		if s.config.Auth.LoginType == "public" {
+			// Public mode: login endpoint also requires authentication
+			protectedLogin := v1.Group("/auth")
+			protectedLogin.Use(middleware.Auth(s.config))
+			protectedLogin.POST("/login", handlers.Login(s.config))
+		} else {
+			// Internal mode: login endpoint is public (default)
+			v1.POST("/auth/login", handlers.Login(s.config))
+		}
 
 		// Protected routes (require authentication)
 		protected := v1.Group("")

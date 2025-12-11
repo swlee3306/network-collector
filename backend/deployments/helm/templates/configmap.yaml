@@ -21,6 +21,11 @@ data:
   
   # OpenStack Domain (non-sensitive)
   OPENSTACK_DOMAIN_NAME: {{ .Values.openstack.domainName | quote }}
+  
+  # Login type configuration
+  # "internal": Login endpoint is public (no authentication required) - default
+  # "public": Login endpoint requires authentication
+  LOGIN_TYPE: {{ .Values.config.loginType | default "internal" | quote }}
 ---
 apiVersion: v1
 kind: ConfigMap

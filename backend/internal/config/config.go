@@ -32,7 +32,8 @@ type ServerConfig struct {
 
 // AuthConfig holds authentication configuration
 type AuthConfig struct {
-	Token string
+	Token     string
+	LoginType string // "internal" or "public" - controls login endpoint access
 }
 
 // LoggingConfig holds logging configuration
@@ -73,7 +74,8 @@ func Load() *Config {
 			SSEEnabled: getEnvAsBool("SSE_ENABLED", true),
 		},
 		Auth: AuthConfig{
-			Token: getEnv("AUTH_TOKEN", ""),
+			Token:     getEnv("AUTH_TOKEN", ""),
+			LoginType: getEnv("LOGIN_TYPE", "internal"), // "internal" (no auth) or "public" (requires auth)
 		},
 		Logging: LoggingConfig{
 			Level: getEnv("LOG_LEVEL", "info"),

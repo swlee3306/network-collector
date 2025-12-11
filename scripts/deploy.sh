@@ -184,6 +184,20 @@ get_secrets() {
         log_info "AUTH_TOKEN: [파일에서 로드됨]"
     fi
     
+    # LOGIN_TYPE 입력 (선택적, 기본값: internal)
+    if [ -z "$LOGIN_TYPE" ]; then
+        read -p "LOGIN_TYPE [internal/public, 기본값: internal]: " LOGIN_TYPE
+        LOGIN_TYPE=${LOGIN_TYPE:-internal}
+    else
+        log_info "LOGIN_TYPE: $LOGIN_TYPE"
+    fi
+    
+    # LOGIN_TYPE 유효성 검증
+    if [ "$LOGIN_TYPE" != "internal" ] && [ "$LOGIN_TYPE" != "public" ]; then
+        log_warn "LOGIN_TYPE이 'internal' 또는 'public'이 아닙니다. 기본값 'internal'을 사용합니다."
+        LOGIN_TYPE="internal"
+    fi
+    
     # 최종 검증
     if [ -z "$DB_PASSWORD" ] || [ -z "$OPENSTACK_PASSWORD" ] || [ -z "$OPENSTACK_PROJECT_ID" ] || [ -z "$JWT_SECRET" ] || [ -z "$AUTH_TOKEN" ]; then
         log_error "필수 Secret 값이 입력되지 않았습니다."
@@ -208,9 +222,29 @@ deploy_k8s() {
         --namespace="$NAMESPACE" \
         --dry-run=client -o yaml | kubectl apply -f -
     
-    # ConfigMap 생성
+    # ConfigMap 생성 (LOGIN_TYPE 환경변수 반영)
     log_info "ConfigMap 생성 중..."
-    kubectl apply -f backend/deployments/k8s/configmap.yaml -n "$NAMESPACE"
+    LOGIN_TYPE=${LOGIN_TYPE:-internal}
+    # ConfigMap을 직접 생성하여 LOGIN_TYPE 적용
+    kubectl create configmap network-collector-config \
+        --from-literal=DB_HOST="mariadb" \
+        --from-literal=DB_PORT="3306" \
+        --from-literal=DB_USER="openstack_monitor" \
+        --from-literal=DB_NAME="openstack_monitor" \
+        --from-literal=SERVER_PORT="8080" \
+        --from-literal=SSE_ENABLED="true" \
+        --from-literal=LOG_LEVEL="info" \
+        --from-literal=ENVIRONMENT="production" \
+        --from-literal=OPENSTACK_DOMAIN_NAME="default" \
+        --from-literal=LOGIN_TYPE="$LOGIN_TYPE" \
+        --namespace="$NAMESPACE" \
+        --dry-run=client -o yaml | kubectl apply -f -
+    
+    # Frontend ConfigMap 생성
+    kubectl create configmap network-collector-frontend-config \
+        --from-literal=REACT_APP_API_URL="/api/v1" \
+        --namespace="$NAMESPACE" \
+        --dry-run=client -o yaml | kubectl apply -f -
     
     # MariaDB 배포
     log_info "MariaDB 배포 중..."
@@ -255,6 +289,9 @@ deploy_helm() {
     
     cd "$PROJECT_ROOT/backend/deployments/helm"
     
+    # LOGIN_TYPE 기본값 설정
+    LOGIN_TYPE=${LOGIN_TYPE:-internal}
+    
     helm upgrade --install network-collector . \
         --namespace "$NAMESPACE" \
         --create-namespace \
@@ -265,6 +302,7 @@ deploy_helm() {
         --set secrets.openstackProjectID="$OPENSTACK_PROJECT_ID" \
         --set secrets.jwtSecret="$JWT_SECRET" \
         --set secrets.authToken="$AUTH_TOKEN" \
+        --set config.loginType="$LOGIN_TYPE" \
         --set collector.image.repository="${IMAGE_REGISTRY}network-collector" \
         --set collector.image.tag="$IMAGE_TAG" \
         --set api.image.repository="${IMAGE_REGISTRY}network-collector-api" \
