@@ -69,12 +69,18 @@ func dropProblematicForeignKeys(db *gorm.DB) error {
 
 		if err == nil && fkName != "" {
 			log.Printf("Dropping foreign key constraint before migration: %s", fkName)
-			if err := db.Exec(`
-				SET FOREIGN_KEY_CHECKS = 0;
-				ALTER TABLE instances DROP FOREIGN KEY ` + fkName + `;
-				SET FOREIGN_KEY_CHECKS = 1;
-			`).Error; err != nil {
-				log.Printf("Warning: Failed to drop foreign key constraint: %v", err)
+			// Execute each SQL statement separately - GORM Exec() can only handle one statement at a time
+			if err := db.Exec(`SET FOREIGN_KEY_CHECKS = 0`).Error; err != nil {
+				log.Printf("Warning: Failed to disable foreign key checks: %v", err)
+			}
+			// Use backticks for FK name to handle special characters
+			if err := db.Exec("ALTER TABLE instances DROP FOREIGN KEY `" + fkName + "`").Error; err != nil {
+				log.Printf("Warning: Failed to drop foreign key constraint %s: %v", fkName, err)
+			} else {
+				log.Printf("Successfully dropped foreign key constraint: %s", fkName)
+			}
+			if err := db.Exec(`SET FOREIGN_KEY_CHECKS = 1`).Error; err != nil {
+				log.Printf("Warning: Failed to enable foreign key checks: %v", err)
 			}
 		}
 	}
@@ -107,6 +113,7 @@ func ensureColumnTypes(db *gorm.DB) error {
 					log.Printf("Fixing instances.hypervisor_id from %s to VARCHAR(255)...", columnType)
 					
 					// ALWAYS drop foreign key constraint first (it might have been recreated by AutoMigrate)
+					// This MUST succeed or column type change will fail
 					var fkName string
 					err = db.Raw(`
 						SELECT CONSTRAINT_NAME
@@ -120,24 +127,46 @@ func ensureColumnTypes(db *gorm.DB) error {
 					
 					if err == nil && fkName != "" {
 						log.Printf("Dropping foreign key constraint: %s", fkName)
-						// Use separate statements to ensure FK is dropped
-						// This MUST succeed or column type change will fail
+						// Disable foreign key checks first
 						if err := db.Exec(`SET FOREIGN_KEY_CHECKS = 0`).Error; err != nil {
 							log.Printf("Warning: Failed to disable foreign key checks: %v", err)
 						}
-						// Try to drop FK - if this fails, we can't change column type
-						if err := db.Exec(`ALTER TABLE instances DROP FOREIGN KEY ` + fkName).Error; err != nil {
-							log.Printf("Error: Failed to drop foreign key constraint %s: %v", fkName, err)
-							// Try alternative: use backticks for FK name
-							if err2 := db.Exec("ALTER TABLE instances DROP FOREIGN KEY `" + fkName + "`").Error; err2 != nil {
+						
+						// Try to drop FK with backticks (safer for special characters)
+						dropSuccess := false
+						if err := db.Exec("ALTER TABLE instances DROP FOREIGN KEY `" + fkName + "`").Error; err != nil {
+							log.Printf("Warning: Failed to drop foreign key constraint %s with backticks: %v", fkName, err)
+							// Try without backticks as fallback
+							if err2 := db.Exec(`ALTER TABLE instances DROP FOREIGN KEY ` + fkName).Error; err2 != nil {
 								log.Printf("Error: Both attempts to drop FK failed: %v, %v", err, err2)
-								// Continue anyway - maybe FK doesn't exist or was already dropped
 							} else {
-								log.Printf("Successfully dropped foreign key constraint using backticks")
+								log.Printf("Successfully dropped foreign key constraint without backticks")
+								dropSuccess = true
 							}
 						} else {
 							log.Printf("Successfully dropped foreign key constraint: %s", fkName)
+							dropSuccess = true
 						}
+						
+						// Verify FK was actually dropped
+						if dropSuccess {
+							var verifyFkName string
+							verifyErr := db.Raw(`
+								SELECT CONSTRAINT_NAME
+								FROM information_schema.KEY_COLUMN_USAGE
+								WHERE TABLE_SCHEMA = DATABASE()
+								AND TABLE_NAME = 'instances'
+								AND COLUMN_NAME = 'hypervisor_id'
+								AND REFERENCED_TABLE_NAME IS NOT NULL
+								LIMIT 1
+							`).Scan(&verifyFkName).Error
+							
+							if verifyErr == nil && verifyFkName != "" {
+								log.Printf("Warning: Foreign key constraint still exists after drop attempt: %s", verifyFkName)
+							}
+						}
+						
+						// Re-enable foreign key checks
 						if err := db.Exec(`SET FOREIGN_KEY_CHECKS = 1`).Error; err != nil {
 							log.Printf("Warning: Failed to enable foreign key checks: %v", err)
 						}
@@ -153,10 +182,35 @@ func ensureColumnTypes(db *gorm.DB) error {
 					}
 					
 					// Now modify the column type - this MUST succeed
-					// Try with FOREIGN_KEY_CHECKS disabled to ensure it works even if FK still exists
+					// Double-check that FK is gone before attempting MODIFY COLUMN
+					var remainingFkName string
+					checkErr := db.Raw(`
+						SELECT CONSTRAINT_NAME
+						FROM information_schema.KEY_COLUMN_USAGE
+						WHERE TABLE_SCHEMA = DATABASE()
+						AND TABLE_NAME = 'instances'
+						AND COLUMN_NAME = 'hypervisor_id'
+						AND REFERENCED_TABLE_NAME IS NOT NULL
+						LIMIT 1
+					`).Scan(&remainingFkName).Error
+					
+					if checkErr == nil && remainingFkName != "" {
+						log.Printf("Warning: Foreign key constraint %s still exists, attempting final drop before MODIFY COLUMN", remainingFkName)
+						if err := db.Exec(`SET FOREIGN_KEY_CHECKS = 0`).Error; err != nil {
+							log.Printf("Warning: Failed to disable foreign key checks: %v", err)
+						}
+						// Final attempt to drop FK
+						if err := db.Exec("ALTER TABLE instances DROP FOREIGN KEY `" + remainingFkName + "`").Error; err != nil {
+							log.Printf("Error: Final attempt to drop FK failed: %v", err)
+						}
+					}
+					
+					// Disable foreign key checks before MODIFY COLUMN
 					if err := db.Exec(`SET FOREIGN_KEY_CHECKS = 0`).Error; err != nil {
 						log.Printf("Warning: Failed to disable foreign key checks: %v", err)
 					}
+					
+					// Now modify the column type
 					if err := db.Exec(`
 						ALTER TABLE instances 
 						MODIFY COLUMN hypervisor_id VARCHAR(255) NULL
@@ -166,6 +220,8 @@ func ensureColumnTypes(db *gorm.DB) error {
 						db.Exec(`SET FOREIGN_KEY_CHECKS = 1`)
 						return fmt.Errorf("failed to modify hypervisor_id to VARCHAR(255): %w", err)
 					}
+					
+					// Re-enable foreign key checks
 					if err := db.Exec(`SET FOREIGN_KEY_CHECKS = 1`).Error; err != nil {
 						log.Printf("Warning: Failed to enable foreign key checks: %v", err)
 					}
