@@ -1,5 +1,13 @@
 # OpenStack Monitoring System
 
+## 한 줄 소개
+OpenStack 자원과 네트워크 토폴로지를 수집하고 조회하는 모니터링 시스템입니다.
+
+## 저장소 성격
+- 분류: 플랫폼 / 인프라
+- 목적: OpenStack 자원 모니터링과 네트워크 흐름 가시화
+- 핵심 기술: Go, OpenStack, Kubernetes, MariaDB
+
 오픈스택 환경의 전체 리소스(서버, 프로젝트, 네트워크, 하이퍼바이저, 플레이버, 볼륨)를 모니터링하고, VM부터 물리 호스트까지의 네트워크 토폴로지를 시각화하는 시스템입니다.
 
 ## Features
@@ -70,4 +78,3 @@ frontend/
 ## License
 
 [Add your license here]
-
