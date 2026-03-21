@@ -1,80 +1,169 @@
-# OpenStack Monitoring System
+# network-collector
 
 ## 한 줄 소개
-OpenStack 자원과 네트워크 토폴로지를 수집하고 조회하는 모니터링 시스템입니다.
+OpenStack 자원, 메트릭, 네트워크 토폴로지를 수집하고 조회하는 모니터링 시스템입니다.
 
 ## 저장소 성격
 - 분류: 플랫폼 / 인프라
-- 목적: OpenStack 자원 모니터링과 네트워크 흐름 가시화
-- 핵심 기술: Go, OpenStack, Kubernetes, MariaDB
+- 목적: OpenStack 자원 수집, 메트릭 조회, 네트워크 토폴로지 가시화
+- 핵심 기술: Go, React, OpenStack, Gin, GORM, MariaDB, Kubernetes, Helm
 
-오픈스택 환경의 전체 리소스(서버, 프로젝트, 네트워크, 하이퍼바이저, 플레이버, 볼륨)를 모니터링하고, VM부터 물리 호스트까지의 네트워크 토폴로지를 시각화하는 시스템입니다.
+## 현재 구현 범위
+- OpenStack 자원 수집
+  - instances
+  - projects
+  - networks
+  - hypervisors
+  - flavors
+  - volumes
+  - ports
+  - routers
+- 인스턴스, 네트워크, 하이퍼바이저 메트릭 수집과 조회
+- VM 기준 / Host 기준 / Network 기준 토폴로지 조회
+- 로그인, 보호된 API, SSE 이벤트 스트림
+- React 기반 대시보드와 상세 페이지
+- Kubernetes 매니페스트와 Helm chart 기반 배포
 
-## Features
+## 구성
 
-- **네트워크 토폴로지 시각화**: VM부터 물리 호스트까지의 전체 네트워크 경로 시각화
-- **리소스 모니터링**: 서버, 프로젝트, 네트워크, 하이퍼바이저, 플레이버, 볼륨 모니터링
-- **과거 데이터 조회**: 시간대별 메트릭 조회 및 트렌드 분석
-- **실시간 업데이트**: 1분 간격 데이터 수집 및 실시간 대시보드 업데이트
+### Backend
+- Go 기반 API 서버
+- Go 기반 collector 서비스
+- MariaDB 저장소
+- OpenStack API 연동
+- Prometheus `/metrics` 엔드포인트
 
-## Architecture
+### Frontend
+- React + TypeScript
+- Dashboard, Resource List, Detail, Metrics, Topology 화면
+- Cytoscape.js 기반 토폴로지 시각화
+- Chart.js 기반 메트릭 차트
 
-- **Backend**: Go 1.21+ (gophercloud, Gin/Echo, GORM)
-- **Frontend**: React/Vue.js (Cytoscape.js, Chart.js)
-- **Database**: MariaDB 10.6+
-- **Deployment**: Kubernetes + Helm
+## 실행 방법
 
-## Quick Start
-
-자세한 시작 가이드는 다음 문서를 참조하세요:
-- [빠른 시작 가이드](specs/001-openstack-monitoring/quickstart.md)
-- [배포 가이드](DEPLOYMENT.md)
-- [배포 스크립트](scripts/README.md)
-
-### Prerequisites
-
-- Go 1.21+
-- MariaDB 10.6+
-- Kubernetes cluster
-- OpenStack environment access
-
-### Local Development
-
+### 1. 저장소 클론
 ```bash
-# Backend
+git clone https://github.com/swlee3306/network-collector.git
+cd network-collector
+```
+
+### 2. 환경 변수 준비
+`.env.example`을 참고해 필요한 값을 준비합니다.
+
+주요 값:
+```bash
+export DB_HOST=localhost
+export DB_PORT=3306
+export DB_USER=root
+export DB_PASSWORD=your-password
+export DB_NAME=openstack_monitor
+
+export OPENSTACK_AUTH_URL=http://<keystone>:5000/v3
+export OPENSTACK_USERNAME=admin
+export OPENSTACK_PASSWORD=secret
+export OPENSTACK_PROJECT_ID=<project-id>
+export OPENSTACK_DOMAIN_NAME=default
+export OPENSTACK_ENDPOINT_TYPE=public
+
+export JWT_SECRET=change-me
+export AUTH_TOKEN=change-me
+export LOGIN_TYPE=internal
+export SERVER_PORT=8080
+```
+
+### 3. Backend 실행
+```bash
 cd backend
 go mod download
-go run cmd/collector/main.go
-go run cmd/api/main.go
 
-# Frontend
+# API 서버
+go run ./cmd/api
+
+# Collector
+go run ./cmd/collector
+```
+
+### 4. Frontend 실행
+```bash
 cd frontend
 npm install
 npm start
 ```
 
-## Project Structure
+## 주요 엔드포인트
 
-```
-backend/
-├── cmd/              # Application entry points
-├── internal/         # Internal packages
-├── pkg/              # Public packages
-└── tests/            # Test files
-
-frontend/
-├── src/              # Source files
-└── public/           # Static files
+### 공용 엔드포인트
+```http
+GET /health
+GET /metrics
+POST /api/v1/auth/login
 ```
 
-## Documentation
+### 보호된 리소스 엔드포인트
+```http
+GET /api/v1/instances
+GET /api/v1/instances/:id
+GET /api/v1/projects
+GET /api/v1/projects/compare
+GET /api/v1/projects/:id
+GET /api/v1/projects/:id/summary
+GET /api/v1/networks
+GET /api/v1/hypervisors
+GET /api/v1/flavors
+GET /api/v1/volumes
+```
 
-- [Feature Specification](specs/001-openstack-monitoring/spec.md)
-- [Implementation Plan](specs/001-openstack-monitoring/plan.md)
-- [Data Model](specs/001-openstack-monitoring/data-model.md)
-- [API Contract](specs/001-openstack-monitoring/contracts/api.yaml)
-- [Tasks](specs/001-openstack-monitoring/tasks.md)
+### 토폴로지 / 메트릭 / 이벤트
+```http
+GET /api/v1/topology/instances/:id
+GET /api/v1/topology/hosts/:id
+GET /api/v1/topology/networks/:id
 
-## License
+GET /api/v1/metrics/instances/:id
+GET /api/v1/metrics/networks/:id
+GET /api/v1/metrics/hypervisors/:id
 
-[Add your license here]
+GET /api/v1/events/stream
+```
+
+## 프로젝트 구조
+```text
+network-collector/
+├── backend/
+│   ├── cmd/
+│   │   ├── api/
+│   │   ├── collector/
+│   │   └── migrate/
+│   ├── internal/
+│   ├── pkg/
+│   └── tests/
+├── frontend/
+│   ├── src/
+│   └── public/
+├── deployments/
+│   ├── k8s/
+│   └── helm/
+├── docs/
+├── scripts/
+└── specs/
+```
+
+## 배포
+- Kubernetes 매니페스트는 `deployments/k8s` 아래에 있습니다.
+- Helm chart는 `deployments/helm` 아래에 있습니다.
+- 보조 스크립트는 `scripts/`에 정리돼 있습니다.
+
+자세한 내용:
+- [배포 가이드](DEPLOYMENT.md)
+- [스크립트 안내](scripts/README.md)
+
+## 검증
+```bash
+cd backend && go test ./...
+cd frontend && npm run build
+```
+
+현재 frontend build는 성공하지만 ESLint 경고가 일부 남아 있습니다.
+
+## 핀 저장소용 설명 문구
+OpenStack 자원, 메트릭, 네트워크 토폴로지를 수집하고 시각화하는 모니터링 시스템
