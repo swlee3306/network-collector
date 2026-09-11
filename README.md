@@ -1,5 +1,7 @@
 # network-collector
 
+**탐색 안내:** [데이터 흐름·코드 위치·검증 명령](docs/PORTFOLIO.md) · [프로젝트 맵](https://github.com/swlee3306#selected-work)
+
 ## 한 줄 소개
 OpenStack 자원, 메트릭, 네트워크 토폴로지를 수집하고 조회하는 모니터링 시스템입니다.
 
@@ -60,13 +62,13 @@ export DB_NAME=openstack_monitor
 
 export OPENSTACK_AUTH_URL=http://<keystone>:5000/v3
 export OPENSTACK_USERNAME=admin
-export OPENSTACK_PASSWORD=secret
+export OPENSTACK_PASSWORD=REPLACE_LOCALLY
 export OPENSTACK_PROJECT_ID=<project-id>
 export OPENSTACK_DOMAIN_NAME=default
 export OPENSTACK_ENDPOINT_TYPE=public
 
-export JWT_SECRET=change-me
-export AUTH_TOKEN=change-me
+export JWT_SECRET=REPLACE_LOCALLY
+export AUTH_TOKEN=REPLACE_LOCALLY
 export LOGIN_TYPE=internal
 export SERVER_PORT=8080
 ```
